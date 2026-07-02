@@ -41,6 +41,27 @@ G.botMgr = (function () {
   }
   M.makeNametag = makeNametag;
 
+  // floating green chevron over teammates — drawn through walls so you never
+  // have to guess who's friendly
+  function makeFriendMarker() {
+    const c = document.createElement('canvas');
+    c.width = 64; c.height = 64;
+    const x = c.getContext('2d');
+    x.beginPath();
+    x.moveTo(32, 56); x.lineTo(12, 22); x.lineTo(24, 22); x.lineTo(32, 36); x.lineTo(40, 22); x.lineTo(52, 22);
+    x.closePath();
+    x.fillStyle = '#3fe04f'; x.fill();
+    x.lineWidth = 5; x.lineJoin = 'round'; x.strokeStyle = '#083a10'; x.stroke();
+    const t = new THREE.CanvasTexture(c);
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, depthTest: false }));
+    sp.scale.set(0.44, 0.44, 1);
+    sp.position.y = 2.75;
+    sp.renderOrder = 9;
+    sp.visible = false;
+    return sp;
+  }
+  M.makeFriendMarker = makeFriendMarker;
+
   // shared humanoid model builder — used for bots and remote players
   function buildModel(ent, opts) {
     opts = opts || {};
@@ -86,9 +107,12 @@ G.botMgr = (function () {
     gun.position.set(0.15, 1.35, 0.42);
     g.add(gun);
     ent.gun = gun;
-    const relColor = (G.player && ent.team === G.player.team) ? '#7dff7d' : '#ff5544';
-    ent.tag = makeNametag(ent.name, relColor);
+    const friendly = G.player && ent.team === G.player.team;
+    ent.tag = makeNametag(ent.name, friendly ? '#7dff7d' : '#ff5544');
+    if (friendly) { ent.tag.material.depthTest = false; ent.tag.renderOrder = 9; }
     g.add(ent.tag);
+    ent.marker = makeFriendMarker();
+    g.add(ent.marker);
     ent.group = g;
   }
   M.buildModel = buildModel;
@@ -150,6 +174,7 @@ G.botMgr = (function () {
     bot.respawnT = 3.5;
     bot.corpseT = 11;
     bot.tag.visible = false;
+    bot.marker.visible = false;
     const p = bot.group.position;
     const gib = opts.gib || opts.cause === 'explosion' || (opts.cause === 'shotgun' && opts.close);
     if (gib) {
@@ -506,6 +531,16 @@ G.botMgr = (function () {
     bot.lastSeenAgo += dt;
     if (bot.reloadT > 0) bot.reloadT -= dt;
 
+    // lava hurts bots too (host-authoritative; nav avoids it, blasts don't)
+    if (G.world.lavaAt && G.world.lavaAt(bp.x, bp.z, bp.y)) {
+      bot.lavaAcc = (bot.lavaAcc || 0) - dt;
+      if (bot.lavaAcc <= 0) {
+        bot.lavaAcc = 0.45;
+        tmpDir.set(0, 1, 0);
+        bot.damage(16, tmpDir, { attacker: { name: 'THE VOLCANO', team: -1 }, cause: 'explosion', tag: 'LAVA' });
+      }
+    }
+
     // vault in progress: airborne hop, skip everything else
     if (bot.vault) {
       bot.vault.t += dt / 0.5;
@@ -729,7 +764,9 @@ G.botMgr = (function () {
     const aiming = bot.state === 'combat' || bot.state === 'cover' || bot.alertT >= 0;
     animate(bot, dt, aiming, tgtValid(bot) ? t : null, dist);
     const camDist = G.player ? U.dist2d(bp.x, bp.z, G.player.pos.x, G.player.pos.z) : 99;
-    bot.tag.visible = camDist < 42;
+    const friendly = G.player && bot.team === G.player.team;
+    bot.tag.visible = camDist < (friendly ? 90 : 42);
+    bot.marker.visible = !!friendly;
   }
 
   function animate(bot, dt, aiming, t, dist) {
@@ -784,7 +821,9 @@ G.botMgr = (function () {
     bot.group.rotation.y = bot.yaw;
     animate(bot, dt, bot.netAim, null, 10);
     const camDist = G.player ? U.dist2d(bp.x, bp.z, G.player.pos.x, G.player.pos.z) : 99;
-    bot.tag.visible = camDist < 42;
+    const friendly = G.player && bot.team === G.player.team;
+    bot.tag.visible = camDist < (friendly ? 90 : 42);
+    bot.marker.visible = !!friendly;
   }
   M.applySnapshot = function (arr) {
     // arr: flat [x, z, yaw, spd, aim, hp] per bot

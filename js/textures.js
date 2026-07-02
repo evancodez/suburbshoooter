@@ -160,6 +160,155 @@ window.T = (function () {
     for (let y = 16; y < 128; y += 24) wob(x, 2, y, 126, y, 6, 2);
     return tex(c, [1, 1]);
   };
+
+  // ---------- construction site surfaces ----------
+  T.dirt = function () {
+    const { c, x } = cnv(256, 256);
+    x.fillStyle = '#a97d4f'; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 26; i++) blob(x, U.rand(0, 256), U.rand(0, 256), U.rand(6, 18), 8, 'rgba(130,90,50,0.4)', null);
+    for (let i = 0; i < 14; i++) blob(x, U.rand(0, 256), U.rand(0, 256), U.rand(3, 7), 6, 'rgba(80,55,30,0.45)', null);
+    x.strokeStyle = 'rgba(90,60,30,0.5)'; x.lineWidth = 3; x.lineCap = 'round';
+    for (let i = 0; i < 8; i++) { // tire tracks
+      const py = U.rand(10, 246);
+      wob(x, 0, py, 256, py + U.rand(-14, 14), 8, 4);
+    }
+    return tex(c, [1, 1]);
+  };
+  T.gravel = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#9c9c98'; x.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 46; i++) blob(x, U.rand(0, 128), U.rand(0, 128), U.rand(2, 5), 6, U.pick(['rgba(120,120,116,0.8)', 'rgba(150,150,146,0.8)', 'rgba(100,100,98,0.8)']), 'rgba(60,60,58,0.4)', 1.5);
+    return tex(c, [1, 1]);
+  };
+  T.chainlink = function () {
+    const { c, x } = cnv(64, 64);
+    x.clearRect(0, 0, 64, 64);
+    x.fillStyle = 'rgba(210,214,218,0.28)'; x.fillRect(0, 0, 64, 64);
+    x.strokeStyle = 'rgba(120,126,132,0.95)'; x.lineWidth = 2.5;
+    for (let i = -64; i < 64; i += 13) { wob(x, i, 0, i + 64, 64, 4, 1); wob(x, i + 64, 0, i, 64, 4, 1); }
+    border(x, 64, 64, 4, 'rgba(90,96,102,0.9)');
+    return tex(c);
+  };
+  T.plywood = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#d8b075'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(140,95,40,0.5)'; x.lineWidth = 2.5;
+    for (let i = 0; i < 7; i++) {
+      const py = U.rand(8, 120);
+      wob(x, 4, py, 124, py + U.rand(-6, 6), 6, 3);
+    }
+    blob(x, U.rand(30, 98), U.rand(30, 98), 7, 7, 'rgba(150,100,45,0.6)', 'rgba(110,70,25,0.6)', 2);
+    border(x, 128, 128, 6);
+    return tex(c);
+  };
+  T.cinder = function () {
+    const { c, x } = cnv(128, 64);
+    x.fillStyle = '#c2c4c6'; x.fillRect(0, 0, 128, 64);
+    x.strokeStyle = 'rgba(70,72,76,0.7)'; x.lineWidth = 3;
+    wob(x, 64, 4, 64, 60, 5, 2);       // vertical joint
+    x.strokeStyle = 'rgba(70,72,76,0.45)'; x.lineWidth = 2;
+    x.strokeRect(14, 14, 34, 36); x.strokeRect(78, 14, 34, 36); // block holes
+    border(x, 128, 64, 6);
+    return tex(c);
+  };
+  T.girder = function () {
+    const { c, x } = cnv(64, 128);
+    x.fillStyle = '#e8a020'; x.fillRect(0, 0, 64, 128);
+    x.strokeStyle = 'rgba(120,70,10,0.55)'; x.lineWidth = 3;
+    for (let y = 18; y < 128; y += 26) { // rivets
+      blob(x, 14, y, 3.5, 6, 'rgba(90,55,10,0.8)', null);
+      blob(x, 50, y, 3.5, 6, 'rgba(90,55,10,0.8)', null);
+    }
+    wob(x, 32, 2, 32, 126, 7, 2);
+    border(x, 64, 128, 6);
+    return tex(c);
+  };
+  T.hazard = function () {
+    const { c, x } = cnv(128, 64);
+    x.fillStyle = '#ffcf2e'; x.fillRect(0, 0, 128, 64);
+    x.fillStyle = '#20232a';
+    for (let i = -64; i < 128; i += 32) {
+      x.beginPath();
+      x.moveTo(i, 64); x.lineTo(i + 32, 0); x.lineTo(i + 48, 0); x.lineTo(i + 16, 64);
+      x.closePath(); x.fill();
+    }
+    border(x, 128, 64, 6);
+    return tex(c);
+  };
+  T.container = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(0,0,0,0.3)'; x.lineWidth = 4;
+    for (let px = 16; px < 128; px += 18) wob(x, px, 6, px, 122, 6, 1.5);
+    border(x, 128, 128, 7);
+    return tex(c);
+  };
+
+  // ---------- volcano island surfaces ----------
+  T.sand = function () {
+    const { c, x } = cnv(256, 256);
+    x.fillStyle = '#eed08a'; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 30; i++) blob(x, U.rand(0, 256), U.rand(0, 256), U.rand(5, 14), 8, 'rgba(230,190,120,0.5)', null);
+    x.strokeStyle = 'rgba(180,140,70,0.4)'; x.lineWidth = 2; x.lineCap = 'round';
+    for (let i = 0; i < 16; i++) { // ripples
+      const py = U.rand(6, 250);
+      wob(x, U.rand(0, 100), py, U.rand(150, 256), py + U.rand(-8, 8), 6, 3);
+    }
+    return tex(c, [1, 1]);
+  };
+  T.water = function () {
+    const { c, x } = cnv(256, 256);
+    x.fillStyle = '#2e8fae'; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 12; i++) blob(x, U.rand(0, 256), U.rand(0, 256), U.rand(14, 30), 9, 'rgba(60,165,190,0.5)', null);
+    x.strokeStyle = 'rgba(235,250,255,0.75)'; x.lineWidth = 4; x.lineCap = 'round';
+    for (let i = 0; i < 14; i++) { // cartoon wave curls
+      const px = U.rand(10, 230), py = U.rand(10, 246);
+      x.beginPath();
+      x.moveTo(px, py);
+      x.quadraticCurveTo(px + 12, py - 9, px + 24, py);
+      x.stroke();
+    }
+    return tex(c, [1, 1]);
+  };
+  T.lava = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ff5a12'; x.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 9; i++) blob(x, U.rand(0, 128), U.rand(0, 128), U.rand(9, 20), 8, 'rgba(255,190,40,0.85)', null);
+    for (let i = 0; i < 7; i++) blob(x, U.rand(0, 128), U.rand(0, 128), U.rand(4, 9), 7, 'rgba(140,20,10,0.7)', null);
+    x.strokeStyle = 'rgba(60,10,5,0.8)'; x.lineWidth = 3;
+    for (let i = 0; i < 5; i++) wob(x, U.rand(0, 128), U.rand(0, 128), U.rand(0, 128), U.rand(0, 128), 6, 8);
+    return tex(c, [1, 1]);
+  };
+  T.lavarock = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#4b4348'; x.fillRect(0, 0, 128, 128);
+    for (let i = 0; i < 18; i++) blob(x, U.rand(0, 128), U.rand(0, 128), U.rand(5, 13), 7, 'rgba(60,54,60,0.7)', 'rgba(25,22,26,0.6)', 2);
+    x.strokeStyle = 'rgba(255,120,30,0.55)'; x.lineWidth = 2.5; // glowing cracks
+    wob(x, 8, U.rand(20, 108), 120, U.rand(20, 108), 8, 10);
+    wob(x, U.rand(20, 108), 8, U.rand(20, 108), 120, 8, 10);
+    border(x, 128, 128, 6, 'rgba(20,16,20,0.9)');
+    return tex(c, [1, 1]);
+  };
+  T.bamboo = function () {
+    const { c, x } = cnv(64, 128);
+    x.fillStyle = '#cdb968'; x.fillRect(0, 0, 64, 128);
+    x.strokeStyle = 'rgba(120,100,40,0.6)'; x.lineWidth = 3;
+    wob(x, 16, 2, 16, 126, 7, 1.5); wob(x, 33, 2, 33, 126, 7, 1.5); wob(x, 50, 2, 50, 126, 7, 1.5);
+    x.strokeStyle = 'rgba(100,82,30,0.7)'; x.lineWidth = 4;
+    wob(x, 2, 34, 62, 34, 4, 2); wob(x, 2, 78, 62, 78, 4, 2); wob(x, 2, 112, 62, 112, 4, 2);
+    border(x, 64, 128, 5);
+    return tex(c);
+  };
+  T.thatch = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#d6a852'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(140,95,30,0.55)'; x.lineWidth = 2.5; x.lineCap = 'round';
+    for (let y = 10; y < 128; y += 16)
+      for (let px = 4; px < 128; px += 11)
+        wob(x, px, y, px + U.rand(-3, 3), y + 13, 2, 2);
+    border(x, 128, 128, 6);
+    return tex(c);
+  };
   T.trunk = function () {
     const { c, x } = cnv(64, 128);
     x.fillStyle = '#8b5a2b'; x.fillRect(0, 0, 64, 128);

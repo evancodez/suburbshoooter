@@ -298,6 +298,10 @@
   <div class="title">BLOCK OPS</div>
   <div class="subtitle">~ suburban warfare ~</div>
   <div class="panel">
+    <h3>MAP</h3>
+    <div class="btnrow" id="mapSel">
+      <button data-v="suburbs" class="sel">SUBURBS</button><button data-v="construction">THE SITE</button><button data-v="island">VOLCANO ISLAND</button>
+    </div>
     <h3>MATCH SETUP</h3>
     <div class="mprow" style="flex-wrap:wrap">
       <span class="stepper"><b>BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
@@ -358,6 +362,13 @@
       <input type="text" id="lobbyName" maxlength="14" placeholder="type a name">
     </div>
     <div class="hostonly" style="font-size:13px; color:#666">click a player to swap their team</div>
+    <div class="mprow hostonly">
+      <b>MAP</b>
+      <div class="btnrow" id="lobbyMap">
+        <button data-v="suburbs">SUBURBS</button><button data-v="construction">THE SITE</button><button data-v="island">VOLCANO ISLAND</button>
+      </div>
+    </div>
+    <div id="lobbyMapLabel" style="font-size:13.5px; font-weight:bold; color:#555"></div>
     <div class="mprow hostonly">
       <span class="stepper"><b>GREEN BOTS</b> <input type="number" class="numin" id="botsAInput" min="0" max="20" step="1"></span>
       <span class="stepper" style="margin-left:14px"><b>RED BOTS</b> <input type="number" class="numin" id="botsBInput" min="0" max="20" step="1"></span>

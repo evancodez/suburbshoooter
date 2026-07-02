@@ -69,33 +69,46 @@ G.net = (function () {
   function remoteById(id) { return N.remoteList.find(r => r.id === id); }
   N.remoteById = remoteById;
 
+  function refreshTag(rp) {
+    const friendly = rp.team === N.myTeam;
+    rp.group.remove(rp.tag);
+    rp.tag = G.botMgr.makeNametag(rp.name, friendly ? '#7dff7d' : '#ff5544');
+    if (friendly) { rp.tag.material.depthTest = false; rp.tag.renderOrder = 9; }
+    rp.group.add(rp.tag);
+  }
   function syncRemotesToLobby() {
     // create/update remote entities from lobby roster (all players except me)
     if (!N.lobby) return;
+    // my own entry first — everyone else's colors depend on my team
+    const me = N.lobby.players.find(p => p.id === N.myId);
+    if (me) {
+      N.myTeam = me.team;
+      N.myName = me.name; // host may have assigned Guest# or applied a rename
+      if (G.player) G.player.team = me.team;
+      if (me.team !== lastMyTeam) { lastMyTeam = me.team; refreshAllTeamVisuals(); }
+    }
     for (const p of N.lobby.players) {
-      if (p.id === N.myId) {
-        N.myTeam = p.team;
-        N.myName = p.name; // host may have assigned Guest# or applied a rename
-        if (G.player) G.player.team = p.team;
-        continue;
-      }
+      if (p.id === N.myId) continue;
       let rp = remoteById(p.id);
+      if (rp && rp.team !== p.team) { removeRemote(p.id); rp = null; } // team swap: rebuild shirts
       if (!rp) {
         rp = RemotePlayer(p.id, p.name, p.team);
         N.remoteList.push(rp);
-      }
-      rp.team = p.team;
-      if (rp.name !== p.name) { // renamed in lobby: redraw the floating tag
+        refreshTag(rp);
+      } else if (rp.name !== p.name) { // renamed in lobby: redraw the floating tag
         rp.name = p.name;
-        rp.group.remove(rp.tag);
-        rp.tag = G.botMgr.makeNametag(p.name, (G.player && p.team === G.player.team) ? '#7dff7d' : '#ff5544');
-        rp.group.add(rp.tag);
+        refreshTag(rp);
       }
     }
     // drop entities for players no longer present
     for (let i = N.remoteList.length - 1; i >= 0; i--) {
       if (!N.lobby.players.find(p => p.id === N.remoteList[i].id)) removeRemote(N.remoteList[i].id);
     }
+  }
+  // my own team changed in the lobby: every tag/marker color is relative to me
+  let lastMyTeam = -1;
+  function refreshAllTeamVisuals() {
+    for (const rp of N.remoteList) refreshTag(rp);
   }
 
   // ---------- wire ----------
@@ -245,7 +258,9 @@ G.net = (function () {
       case 'bm': {
         N.applying = true;
         tmpV.set(msg.x, msg.y, msg.z);
-        G.world.explode(tmpV, msg.r, msg.d, { attacker: { name: msg.an, team: msg.at, remote: true }, tag: msg.tag });
+        // volcano bombs come from the mountain, not from whoever hosted the lobby
+        const att = msg.tag === 'VOLCANO' ? { name: 'THE VOLCANO', team: -1 } : { name: msg.an, team: msg.at, remote: true };
+        G.world.explode(tmpV, msg.r, msg.d, { attacker: att, tag: msg.tag });
         N.applying = false;
         relay(msg, fromConn);
         break;
@@ -372,7 +387,7 @@ G.net = (function () {
         N.isHost = true;
         N.myId = id;
         guestN = 0;
-        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10 } };
+        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10, map: 'suburbs' } };
         N.myTeam = 0;
         cb && cb();
       });
@@ -456,6 +471,7 @@ G.net = (function () {
       diff: N.lobby.cfg.diff,
       target: N.lobby.cfg.target || 30,
       time: (N.lobby.cfg.mins || 10) * 60,
+      map: N.lobby.cfg.map || 'suburbs',
     };
     const roster = G.botMgr.rosterFor([cfg.botsA, cfg.botsB]);
     N.active = true;
@@ -482,7 +498,9 @@ G.net = (function () {
       while (dy < -Math.PI) dy += Math.PI * 2;
       rp.yaw += dy * Math.min(1, 14 * dt);
       g.position.copy(rp.pos);
-      g.rotation.y = rp.yaw;
+      // player yaw is camera convention (forward = -z); the shared humanoid
+      // model faces +z, so flip 180° or the gun points away from the aim
+      g.rotation.y = rp.yaw + Math.PI;
       g.visible = rp.alive;
       if (rp.netSpd > 0.3) rp.animPhase += rp.netSpd * dt * 2.4;
       const swing = Math.sin(rp.animPhase) * 0.55 * Math.min(1, rp.netSpd / 3);
@@ -493,7 +511,9 @@ G.net = (function () {
       rp.armR.rotation.x = U.damp(rp.armR.rotation.x, armX, 10, dt);
       rp.gun.rotation.x = U.damp(rp.gun.rotation.x, -rp.netPitch, 10, dt);
       const camDist = G.player ? U.dist2d(rp.pos.x, rp.pos.z, G.player.pos.x, G.player.pos.z) : 99;
-      rp.tag.visible = rp.alive && camDist < 55;
+      const friendly = rp.team === N.myTeam;
+      rp.tag.visible = rp.alive && camDist < (friendly ? 90 : 55);
+      rp.marker.visible = rp.alive && friendly;
     }
     if (!N.active) return;
     // my state → others

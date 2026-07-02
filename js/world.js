@@ -13,6 +13,10 @@ G.world = (function () {
     frame: 25, trash: 20, recycle: 15, hydrant: 950, hoop: 320, doghouse: 180, kpool: 45,
     ac: 480, dumpster: 800, potty: 550, lumber: 60, mixer: 2100, bed: 700, shelf: 260,
     picnic: 400, swing: 130,
+    // construction site
+    chainlink: 25, plank: 30, block: 45, barrel: 70, pallet: 90, spool: 120, generator: 800, barrier: 120,
+    // volcano island
+    bamboo: 60, thatch: 40, canoe: 700, chest: 5000, surfboard: 350, torch: 25, drum: 90,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -244,7 +248,7 @@ G.world = (function () {
 
   function supportCheck(wall) {
     wall.supportDirty = false;
-    if (wall.kind === 'fence') return; // fences don't cascade
+    if (wall.kind === 'fence' || wall.kind === 'chainlink') return; // fences don't cascade
     for (let c = 0; c < wall.cols; c++) {
       for (let r = 1; r < wall.rows; r++) {
         const i = wall.idx(c, r);
@@ -295,7 +299,7 @@ G.world = (function () {
     batches[s.kind].free(ch.inst);
     tmpV.set(ch.x, ch.y, ch.z);
     G.fx.chunkBreak(tmpV, s.tintColor, { x: ch.sx, y: Math.max(ch.sy, 0.2), z: ch.sz }, vel || tmpN.set(U.rand(-1, 1), U.rand(-1, 1), U.rand(-1, 1)));
-    W.addMoney(s.kind === 'roof' ? 'roof' : 'shed');
+    W.addMoney(MONEY[s.kind] ? s.kind : 'roof');
     W.chunksDestroyed++;
   }
 
@@ -355,6 +359,40 @@ G.world = (function () {
   // hedges (soft, visual leaf fx only)
   const hedges = [];
 
+  // ============ map mechanics: ladders / lava / geysers ============
+  const ladders = []; // {minx,minz,maxx,maxz, topY, baseY}
+  W.ladderAt = function (x, z, feetY) {
+    for (let i = 0; i < ladders.length; i++) {
+      const l = ladders[i];
+      if (x >= l.minx && x <= l.maxx && z >= l.minz && z <= l.maxz &&
+          feetY >= l.baseY - 0.3 && feetY < l.topY - 0.001) return l;
+    }
+    return null;
+  };
+  const lavas = []; // {minx,minz,maxx,maxz,y} — y is the lava surface height
+  W.lavaAt = function (x, z, y) {
+    y = y || 0;
+    for (let i = 0; i < lavas.length; i++) {
+      const L = lavas[i];
+      if (x >= L.minx && x <= L.maxx && z >= L.minz && z <= L.maxz &&
+          y > (L.y || 0) - 0.7 && y < (L.y || 0) + 0.5) return true;
+    }
+    return false;
+  };
+  const geysers = []; // {x,z,r,period,offset}
+  W.geysers = geysers;
+  // erupting geyser under your feet = free elevator
+  W.geyserBoostAt = function (x, z) {
+    for (let i = 0; i < geysers.length; i++) {
+      const g = geysers[i];
+      if (((W.mapClock + g.offset) % g.period) > 1.15) continue;
+      const dx = x - g.x, dz = z - g.z;
+      if (dx * dx + dz * dz < g.r * g.r) return g;
+    }
+    return null;
+  };
+  W.mapClock = 0;
+
   // ============ navgrid ============
   const NAV = { ox: -72, oz: -58, w: 144, d: 116, cell: 1 };
   const navBlocked = new Uint8Array(NAV.w * NAV.d);
@@ -370,7 +408,7 @@ G.world = (function () {
   };
   function cellBlockedNow(cx, cz) {
     const x = NAV.ox + cx + 0.5, z = NAV.oz + cz + 0.5;
-    if (x < -67 || x > 67 || z < -53 || z > 53) return true;
+    if (x < -W.bounds.x - 1 || x > W.bounds.x + 1 || z < -W.bounds.z - 1 || z > W.bounds.z + 1) return true;
     // colliders
     for (let i = 0; i < colliders.length; i++) {
       const c = colliders[i];
@@ -382,6 +420,18 @@ G.world = (function () {
     for (let i = 0; i < hedges.length; i++) {
       const h = hedges[i];
       if (x > h.minx - 0.2 && x < h.maxx + 0.2 && z > h.minz - 0.2 && z < h.maxz + 0.2) return true;
+    }
+    // lava scares the AI off — unless a walkable plank/bridge covers the cell
+    for (let i = 0; i < lavas.length; i++) {
+      const L = lavas[i];
+      if (x <= L.minx || x >= L.maxx || z <= L.minz || z >= L.maxz) continue;
+      let bridged = false;
+      for (let j = 0; j < colliders.length; j++) {
+        const c = colliders[j];
+        if (!c.step || c.gone || c.maxy < 0.4 || c.maxy > 1.6) continue;
+        if (x > c.minx - 0.1 && x < c.maxx + 0.1 && z > c.minz - 0.1 && z < c.maxz + 0.1) { bridged = true; break; }
+      }
+      if (!bridged) return true;
     }
     // walls: standing range block
     for (let i = 0; i < walls.length; i++) {
@@ -884,7 +934,8 @@ G.world = (function () {
     mesh.position.set(x, y + sy / 2, z);
     if (opts && opts.rotY) mesh.rotation.y = opts.rotY;
     grp.add(mesh);
-    const col = addCollider(x - sx / 2, y, z - sz / 2, x + sx / 2, y + sy, z + sz / 2, { prop: true, metal: opts && opts.metal });
+    const col = addCollider(x - sx / 2, y, z - sz / 2, x + sx / 2, y + sy, z + sz / 2,
+      { prop: true, metal: opts && opts.metal, step: opts && opts.step, noWalk: opts && opts.noWalk });
     const prop = { kind, mesh, hp, x, y: y + sy / 2, z, sx, sy, sz, tint: new THREE.Color(tint || 0xcccccc), collider: col, dead: false };
     col.prop = prop;
     props.push(prop);
@@ -908,6 +959,11 @@ G.world = (function () {
     if (prop.kind === 'propane') {
       tmpV.set(prop.x, prop.y, prop.z);
       W.explode(tmpV, 5.5, 115, { attacker, tag: 'PROPANE' });
+    } else if (prop.kind === 'barrel' || prop.kind === 'drum') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 5.8, 125, { attacker, tag: 'BARREL' });
+    } else if (prop.kind === 'chest' && G.game) {
+      G.game.chat('HOA_Enforcer', 'the pirate treasure!! think of the property value');
     } else if (prop.kind === 'hydrant') {
       // burst water main
       G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, 0.35, prop.z), rate: 34, kind: 'water', dur: 26 });
@@ -1298,34 +1354,59 @@ G.world = (function () {
   let hedgeMat, stairMat;
 
   // ---------- verticality helpers ----------
-  let stairGeos = [];
-  function buildStairs(x, z, dx, dz, width, n, stepH, stepD) {
-    stepH = stepH || 0.3; stepD = stepD || 0.46;
+  let stairGeos = [], steelGeos = [], rockGeos = [], frondGeos = [], palmTrunkGeos = [], sandGeos = [];
+  function buildStairs(x, z, dx, dz, width, n, stepH, stepD, baseY) {
+    stepH = stepH || 0.3; stepD = stepD || 0.46; baseY = baseY || 0;
     for (let k = 0; k < n; k++) {
       const cxk = x + dx * stepD * k, czk = z + dz * stepD * k;
       const h = (k + 1) * stepH;
       const sxk = dx !== 0 ? stepD : width, szk = dx !== 0 ? width : stepD;
       const g = U.shadedBoxGeo(sxk, h, szk);
-      g.translate(cxk, h / 2, czk);
+      g.translate(cxk, baseY + h / 2, czk);
       stairGeos.push(g);
-      addCollider(cxk - sxk / 2, 0, czk - szk / 2, cxk + sxk / 2, h, czk + szk / 2, { step: true });
-      slabs.push({ minx: cxk - sxk / 2, minz: czk - szk / 2, maxx: cxk + sxk / 2, maxz: czk + szk / 2, top: h });
+      addCollider(cxk - sxk / 2, baseY, czk - szk / 2, cxk + sxk / 2, baseY + h, czk + szk / 2, { step: true });
+      slabs.push({ minx: cxk - sxk / 2, minz: czk - szk / 2, maxx: cxk + sxk / 2, maxz: czk + szk / 2, top: baseY + h });
     }
   }
-  function buildPlatform(cx, cz, w, d, topY, thick) {
+  function buildPlatform(cx, cz, w, d, topY, thick, geoList) {
     thick = thick || 0.18;
     const g = U.shadedBoxGeo(w, thick, d);
     g.translate(cx, topY - thick / 2, cz);
-    stairGeos.push(g);
+    (geoList || stairGeos).push(g);
     addCollider(cx - w / 2, topY - thick, cz - d / 2, cx + w / 2, topY, cz + d / 2, { step: true });
     slabs.push({ minx: cx - w / 2, minz: cz - d / 2, maxx: cx + w / 2, maxz: cz + d / 2, top: topY });
   }
-  function buildPost(x, z, h, s) {
-    s = s || 0.16;
+  function buildPost(x, z, h, s, baseY, geoList) {
+    s = s || 0.16; baseY = baseY || 0;
     const g = U.shadedBoxGeo(s, h, s);
-    g.translate(x, h / 2, z);
-    stairGeos.push(g);
-    addCollider(x - s / 2, 0, z - s / 2, x + s / 2, h, z + s / 2, { tree: true });
+    g.translate(x, baseY + h / 2, z);
+    (geoList || stairGeos).push(g);
+    addCollider(x - s / 2, baseY, z - s / 2, x + s / 2, baseY + h, z + s / 2, { tree: true });
+  }
+  // climbable ladder: visual rails+rungs into geoList, plus a grab volume.
+  // face = which side of (x,z) the climber hangs on: 'n' -z, 's' +z, 'e' +x, 'w' -x
+  function addLadder(x, z, baseY, topY, face, geoList) {
+    const list = geoList || steelGeos;
+    const along = (face === 'e' || face === 'w') ? 'z' : 'x'; // rails spread along this axis
+    const railOff = 0.36, h = topY - baseY;
+    for (const s of [-railOff, railOff]) {
+      const g = U.shadedBoxGeo(along === 'x' ? 0.09 : 0.07, h + 0.9, along === 'x' ? 0.07 : 0.09);
+      g.translate(along === 'x' ? x + s : x, baseY + (h + 0.9) / 2, along === 'x' ? z : z + s);
+      list.push(g);
+    }
+    for (let y = baseY + 0.38; y < topY + 0.4; y += 0.42) {
+      const g = U.shadedBoxGeo(along === 'x' ? 0.78 : 0.06, 0.07, along === 'x' ? 0.06 : 0.78);
+      g.translate(x, y, z);
+      list.push(g);
+    }
+    const grab = 0.62;
+    ladders.push({
+      minx: x - (along === 'x' ? 0.55 : 0) - (face === 'w' ? grab : 0.06),
+      maxx: x + (along === 'x' ? 0.55 : 0) + (face === 'e' ? grab : 0.06),
+      minz: z - (along === 'z' ? 0.55 : 0) - (face === 'n' ? grab : 0.06),
+      maxz: z + (along === 'z' ? 0.55 : 0) + (face === 's' ? grab : 0.06),
+      baseY, topY,
+    });
   }
 
   function buildShed(cx, cz, tint) {
@@ -1421,7 +1502,7 @@ G.world = (function () {
     addProp('propane', -35.5, 0, 25, 0.55, 0.8, 0.55, T.propane, 0xffffff, 18, { metal: true });
   }
 
-  function buildFenceRun(x0, z0, x1, z1, tall) {
+  function buildFenceRun(x0, z0, x1, z1, tall, kind, tint, hp) {
     const dir = Math.abs(x1 - x0) > Math.abs(z1 - z0) ? 'x' : 'z';
     const len = dir === 'x' ? x1 - x0 : z1 - z0;
     const cols = Math.round(Math.abs(len) / 2);
@@ -1431,7 +1512,7 @@ G.world = (function () {
       ox: dir === 'x' ? Math.min(x0, x1) : x0,
       oy: 0, oz: dir === 'x' ? z0 : Math.min(z0, z1),
       dir, cols, rows, cw: 2, ch, th: 0.15,
-      kind: 'fence', tint: 0xa9713d, hp: 30, house: null,
+      kind: kind || 'fence', tint: tint || 0xa9713d, hp: hp || 30, house: null,
     });
     wallFill(wall, () => 0);
   }
@@ -1467,6 +1548,15 @@ G.world = (function () {
   W.campSpots = [];
 
   W.bounds = { x: 66, z: 52 };
+  W.teamSpawns = [{ x: -62, z: 2.5 }, { x: 62, z: -2.5 }];
+  W.mapId = 'suburbs';
+  W.maps = [
+    { id: 'suburbs', name: 'SUBURBS' },
+    { id: 'construction', name: 'THE SITE' },
+    { id: 'island', name: 'VOLCANO ISLAND' },
+  ];
+  W.mapUpdate = null;
+  W.minimapPaint = null;
 
   W.build = function (sc) {
     scene = sc;
@@ -1477,13 +1567,62 @@ G.world = (function () {
       roof: ChunkBatch(T.roof(), 2600),
       garage: ChunkBatch(T.garageDoor(), 160),
       fence: ChunkBatch(T.fence(), 900),
-      frame: ChunkBatch(T.fence(), 260),
+      frame: ChunkBatch(T.fence(), 420),
       glass: ChunkBatch(T.glassTex(), 360, { transparent: true, opacity: 0.62, renderOrder: 4 }),
+      chainlink: ChunkBatch(T.chainlink(), 220, { transparent: true, renderOrder: 3 }),
+      plank: ChunkBatch(T.plywood(), 520),
+      block: ChunkBatch(T.cinder(), 700),
+      bamboo: ChunkBatch(T.bamboo(), 420),
+      thatch: ChunkBatch(T.thatch(), 700),
     };
     wireMat = new THREE.LineBasicMaterial({ color: 0x222222 });
     hedgeMat = new THREE.MeshBasicMaterial({ map: T.leaf(), vertexColors: true });
     trunkMat = new THREE.MeshBasicMaterial({ map: T.trunk(), vertexColors: true });
+    stairMat = new THREE.MeshBasicMaterial({ map: T.plain(), vertexColors: true, color: 0xb98a55 });
+    W.mapClock = 0;
+    W.mapUpdate = null;
+    W.minimapPaint = null;
+    if (W.mapId === 'construction') buildSiteMap();
+    else if (W.mapId === 'island') buildIslandMap();
+    else buildSuburbs();
+    finishBuild();
+    navBuild();
+    W.flushBatches();
+    W.minimapDirty = true;
+  };
 
+  function addSky(bg, o) {
+    o = o || {};
+    scene.background = new THREE.Color(bg);
+    const cloudTex = T.cloud();
+    for (let i = 0; i < (o.clouds === undefined ? 6 : o.clouds); i++) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, color: o.cloudTint || 0xffffff }));
+      sp.position.set(U.rand(-160, 160), U.rand(40, 78), U.rand(-170, 170));
+      sp.scale.set(U.rand(40, 70), U.rand(18, 30), 1);
+      grp.add(sp);
+    }
+    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.sun(), transparent: true, depthWrite: false, color: o.sunTint || 0xffffff }));
+    const spos = o.sunPos || [130, 95, -150];
+    sun.position.set(spos[0], spos[1], spos[2]);
+    const ss = o.sunScale || 28;
+    sun.scale.set(ss, ss, 1);
+    grp.add(sun);
+  }
+
+  // merge the accumulated geometry lists into single draw calls
+  function finishBuild() {
+    if (treeCanopyGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(treeCanopyGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.leaf() })));
+    if (stairGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(stairGeos.splice(0)), stairMat));
+    if (steelGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(steelGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.girder(), vertexColors: true })));
+    if (rockGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(rockGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.lavarock(), vertexColors: true })));
+    if (palmTrunkGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(palmTrunkGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.trunk(), vertexColors: true, color: 0xc09a60 })));
+    if (frondGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(frondGeos.splice(0)), new THREE.MeshBasicMaterial({ color: 0x2f9e44, side: THREE.DoubleSide })));
+    if (sandGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(sandGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.dirt(), vertexColors: true, color: 0xe8cf90 })));
+  }
+
+  function buildSuburbs() {
+    W.bounds = { x: 66, z: 52 };
+    W.teamSpawns = [{ x: -62, z: 2.5 }, { x: 62, z: -2.5 }];
     // ground + streets (main E-W, cross N-S)
     plane(460, 460, T.grass(), 0, 0, 0).material.map.repeat.set(70, 70);
     plane(140, 9, T.road(), 0, 0.02, 0).material.map.repeat.set(16, 1);
@@ -1542,8 +1681,6 @@ G.world = (function () {
     buildTree(-62, -28); buildTree(-45, -40); buildTree(-8, -48);
     buildTree(20, -28); buildTree(28, -20); buildTree(35, -44); buildTree(17, -40);
     buildTree(60, -38); buildTree(-60, 38); buildTree(60, 42); buildTree(46, 46); buildTree(-8, 48);
-    const canopy = new THREE.Mesh(U.mergeGeos(treeCanopyGeos), new THREE.MeshBasicMaterial({ map: T.leaf() }));
-    grp.add(canopy);
 
     // poles + wires (main street), bare poles on the cross street
     buildPole(-45, 5.2); buildPole(8, 5.2); buildPole(45, 5.2);
@@ -1561,13 +1698,6 @@ G.world = (function () {
         }
         grp.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
       }
-    }
-
-    // stairs / platforms / posts merged into one mesh
-    stairMat = new THREE.MeshBasicMaterial({ map: T.plain(), vertexColors: true, color: 0xb98a55 });
-    if (stairGeos.length) {
-      const stairMesh = new THREE.Mesh(U.mergeGeos(stairGeos.splice(0, stairGeos.length)), stairMat);
-      grp.add(stairMesh);
     }
 
     // backyard patio sets (grill + propane together, next to the deck houses)
@@ -1591,28 +1721,431 @@ G.world = (function () {
     ];
     for (const car of cars) W.campSpots.push({ x: car.group.position.x + 3, z: car.group.position.z + 2, yaw: 0 });
 
-    // sky
-    scene.background = new THREE.Color(0x6cb8ee);
-    const cloudTex = T.cloud();
-    for (let i = 0; i < 6; i++) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false }));
-      sp.position.set(U.rand(-160, 160), U.rand(40, 78), U.rand(-170, 170));
-      sp.scale.set(U.rand(40, 70), U.rand(18, 30), 1);
-      grp.add(sp);
-    }
-    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.sun(), transparent: true, depthWrite: false }));
-    sun.position.set(130, 95, -150);
-    sun.scale.set(28, 28, 1);
-    grp.add(sun);
-
-    navBuild();
-    W.flushBatches();
-    W.minimapDirty = true;
-  };
+    addSky(0x6cb8ee);
+  }
   let wireMat;
 
+  // ============ MAP 2: THE SITE — vertical construction yard ============
+  function buildSiteMap() {
+    W.bounds = { x: 43, z: 35 };
+    W.teamSpawns = [{ x: -40, z: 0 }, { x: 40, z: 0 }];
+
+    // dirt lot + access road + gravel pads
+    plane(460, 460, T.dirt(), 0, 0, 0).material.map.repeat.set(46, 46);
+    plane(56, 5.2, T.driveway(), -18, 0.021, 0).material.map.repeat.set(9, 1);
+    plane(26, 24, T.gravel(), 18, 0.022, 0).material.map.repeat.set(9, 8);
+    plane(8, 8, T.gravel(), -28, 0.022, 24).material.map.repeat.set(3, 3);
+    plane(11, 7, T.gravel(), 10, 0.022, -27).material.map.repeat.set(4, 2);
+
+    // chainlink perimeter with gates on the west + east (spawn gates)
+    const CL = (x0, z0, x1, z1) => buildFenceRun(x0, z0, x1, z1, true, 'chainlink', 0xd7dbdf, 24);
+    CL(-42.5, -34.5, 42.5, -34.5);
+    CL(-42.5, 34.5, 42.5, 34.5);
+    CL(-42.5, -34.5, -42.5, -4); CL(-42.5, 4, -42.5, 34.5);
+    CL(42.5, -34.5, 42.5, -4); CL(42.5, 4, 42.5, 34.5);
+    for (const gx of [-42.5, 42.5]) for (const gz of [-4, 4]) buildPost(gx, gz, 2.7, 0.24, 0, steelGeos);
+    // invisible boundary
+    addCollider(-48, 0, -38, -43.4, 6, 38, { noShoot: true });
+    addCollider(43.4, 0, -38, 48, 6, 38, { noShoot: true });
+    addCollider(-48, 0, -38, 48, 6, -35.4, { noShoot: true });
+    addCollider(-48, 0, 35.4, 48, 6, 38, { noShoot: true });
+
+    // ---- THE TOWER: 3-deck steel skeleton, stairs + ladders + scaffold ----
+    buildPlatform(18, 0, 20.4, 18.4, 0.3, 0.3);                    // ground slab
+    for (const cx2 of [9.2, 18, 26.8])
+      for (const cz2 of [-8.2, 0, 8.2]) buildPost(cx2, cz2, 6.6, 0.55, 0, steelGeos);
+    buildPlatform(18, 0, 20.4, 18.4, 3.3, 0.35);                   // deck 2
+    buildPlatform(18, 0, 20.4, 18.4, 6.3, 0.35);                   // deck 3
+    // big south stairs up to deck 2 + landing
+    buildStairs(12, 14.6, 0, -1, 2.4, 10, 0.33, 0.5);
+    buildPlatform(12, 9.7, 2.6, 1.8, 3.3, 0.3);
+    // ladders: ground → deck 2 (north face), deck 2 → deck 3 (inside east edge)
+    addLadder(22, -8.9, 0, 3.3, 'n');
+    addLadder(27.6, 0, 3.3, 6.3, 'w');
+    // deck 2 plywood windbreak (north) + guardrail (south, gap at the stairs)
+    const wb = WallGrid({ ox: 8, oy: 3.65, oz: -9.05, dir: 'x', cols: 20, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    wallFill(wb, (c, r) => (c >= 8 && c <= 11) ? 1 : ((c === 3 || c === 16) && r === 1) ? 1 : 0);
+    const gr = WallGrid({ ox: 8, oy: 3.65, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.85, th: 0.1, kind: 'plank', tint: 0xc9a05f, hp: 14, house: null });
+    wallFill(gr, (c) => (c >= 2 && c <= 5) ? 1 : 0);
+    // deck 3 cinder parapet (gaps at ladder crest + corners)
+    const pN = WallGrid({ ox: 8, oy: 6.65, oz: -9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    wallFill(pN, (c) => (c >= 9 && c <= 10) ? 1 : 0);
+    const pS = WallGrid({ ox: 8, oy: 6.65, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    wallFill(pS, (c) => (c >= 4 && c <= 5) ? 1 : 0);
+    const pW = WallGrid({ ox: 8.05, oy: 6.65, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    wallFill(pW, (c) => (c >= 8 && c <= 9) ? 1 : 0);
+    const pE = WallGrid({ ox: 27.95, oy: 6.65, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    wallFill(pE, (c) => (c >= 8 && c <= 10) ? 1 : 0);
+    // deck 1 cinder cover walls
+    const c1 = WallGrid({ ox: 11, oy: 0.3, oz: -3, dir: 'x', cols: 6, rows: 2, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 45, house: null });
+    wallFill(c1, () => 0);
+    const c2 = WallGrid({ ox: 23, oy: 0.3, oz: -3, dir: 'z', cols: 6, rows: 2, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 45, house: null });
+    wallFill(c2, () => 0);
+    // deck loot cover
+    addProp('barrel', 26, 3.65, -6, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('lumber', 10.5, 3.65, -5.5, 2.3, 0.55, 1.1, T.plain, 0xc9a05f, 30, {});
+
+    // ---- scaffold along the tower's south face (jump the gap to deck 2) ----
+    buildPlatform(16, 11.8, 16, 1.8, 2.2, 0.14);
+    buildPlatform(16, 11.8, 16, 1.8, 4.4, 0.14);
+    for (const px of [8.2, 12, 16, 20, 23.8]) {
+      buildPost(px, 11.0, 4.8, 0.14, 0, steelGeos);
+      buildPost(px, 12.6, 4.8, 0.14, 0, steelGeos);
+    }
+    addLadder(23.4, 12.85, 0, 2.2, 's');
+    addLadder(8.6, 12.85, 2.2, 4.4, 's');
+    const sg2 = WallGrid({ ox: 8, oy: 4.55, oz: 12.75, dir: 'x', cols: 16, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    wallFill(sg2, (c) => (c <= 1 || c >= 14) ? 1 : 0);
+
+    // ---- tower crane: long ladder, jib catwalk, hanging pallet drop ----
+    (() => { const g = U.shadedBoxGeo(3, 1.2, 3); g.translate(-28, 0.6, 24); steelGeos.push(g); })();
+    addCollider(-29.5, 0, 22.5, -26.5, 1.2, 25.5, { metal: true });
+    for (const [mx, mz] of [[-28.9, 23.1], [-27.1, 23.1], [-28.9, 24.9], [-27.1, 24.9]])
+      buildPost(mx, mz, 14, 0.3, 1.2, steelGeos);
+    addLadder(-28, 25.35, 0, 15.2, 's');
+    buildPlatform(-28, 24, 3, 3, 15.2, 0.25);
+    buildPlatform(-7, 24, 40, 1.3, 15.35, 0.22);                   // jib catwalk
+    (() => { const g = U.shadedBoxGeo(3, 1.8, 2.2); g.translate(-31.8, 14.8, 24); steelGeos.push(g); })(); // counterweight
+    addCollider(-33.3, 13.9, 22.9, -30.3, 15.7, 25.1, { metal: true });
+    (() => { const g = U.shadedBoxGeo(0.1, 6.4, 0.1); g.translate(11, 12.15, 24); steelGeos.push(g); })(); // hook cable
+    buildPlatform(11, 24, 2.4, 2.4, 8.95, 0.25);                   // hanging pallet perch
+
+    // ---- half-built masonry office ----
+    const oW = (o, dir, cols, fn) => {
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 4, cw: 1, ch: 0.72, th: 0.24, kind: 'block', tint: 0xd8d2c4, hp: 45, house: null });
+      wallFill(wl, fn);
+    };
+    oW({ ox: -34, oz: -24 }, 'x', 14, (c, r) => ((c >= 3 && c <= 4) || (c >= 9 && c <= 10)) && (r === 1 || r === 2) ? 3 : 0);
+    oW({ ox: -34, oz: -12 }, 'x', 14, (c, r) => (c === 6 || c === 7) && r <= 2 ? 1 : ((c >= 2 && c <= 3) || (c >= 10 && c <= 11)) && (r === 1 || r === 2) ? 3 : 0);
+    oW({ ox: -34, oz: -24 }, 'z', 12, (c, r) => (c === 5 || c === 6) && (r === 1 || r === 2) ? 3 : 0);
+    oW({ ox: -20, oz: -24 }, 'z', 12, (c, r) => (c === 5 || c === 6) && r <= 2 ? 1 : 0);
+    addProp('pallet', -31, 0, -21, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('shelf', -25, 0, -22.6, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    // pallet step-stack outside the NE corner (peek over the wall)
+    buildPlatform(-19, -26.2, 1.8, 1.8, 0.7, 0.7);
+    buildPlatform(-17.1, -26.2, 1.8, 1.8, 1.4, 1.4);
+
+    // ---- concrete pipe tunnel (walk through it or over it) ----
+    const pipeGeo = new THREE.CylinderGeometry(1.5, 1.5, 6, 12, 1, true);
+    pipeGeo.rotateZ(Math.PI / 2);
+    const pipe = new THREE.Mesh(pipeGeo, new THREE.MeshBasicMaterial({ map: T.driveway(), side: THREE.DoubleSide }));
+    pipe.position.set(0, 1.2, 20);
+    grp.add(pipe);
+    addCollider(-3, 0, 18.55, 3, 2.2, 19.15, { metal: false });
+    addCollider(-3, 0, 20.85, 3, 2.2, 21.45, { metal: false });
+    addCollider(-3, 2.2, 18.9, 3, 2.55, 21.1, { step: true });
+
+    // ---- sand mounds (climbable dunes) ----
+    for (const [mx, mz] of [[34, 22], [-12, -28]]) {
+      buildPlatform(mx, mz, 6, 6, 0.45, 0.45, sandGeos);
+      buildPlatform(mx, mz, 4.2, 4.2, 0.9, 0.45, sandGeos);
+      buildPlatform(mx, mz, 2.6, 2.6, 1.35, 0.45, sandGeos);
+    }
+    // girder stack (steps up, decent cover)
+    (() => { const g = U.shadedBoxGeo(6, 0.42, 1.1); g.translate(32, 0.21, 1.55); steelGeos.push(g); })();
+    addCollider(29, 0, 1, 35, 0.42, 2.1, { step: true });
+    (() => { const g = U.shadedBoxGeo(5, 0.42, 0.8); g.translate(32, 0.63, 1.6); steelGeos.push(g); })();
+    addCollider(29.5, 0.42, 1.2, 34.5, 0.84, 2, { step: true });
+    (() => { const g = U.shadedBoxGeo(3, 0.42, 0.55); g.translate(32, 1.05, 1.6); steelGeos.push(g); })();
+    addCollider(30.5, 0.84, 1.32, 33.5, 1.26, 1.87, { step: true });
+
+    // ---- site office trailer with roof access ----
+    const trailer = new THREE.Mesh(U.shadedBoxGeo(9, 2.7, 5), new THREE.MeshBasicMaterial({ map: T.container(), vertexColors: true, color: 0x86b8dc }));
+    trailer.position.set(10, 1.35, -27);
+    grp.add(trailer);
+    addCollider(5.5, 0, -29.5, 14.5, 2.7, -24.5, { metal: true });
+    buildPlatform(10, -27, 9.2, 5.2, 2.85, 0.16);
+    addLadder(5.3, -27, 0, 2.85, 'w');
+
+    // ---- scattered site junk ----
+    addProp('mixer', -8, 0, 12, 1.5, 1.6, 1.2, T.plain, 0xd07030, 90, { metal: true });
+    addProp('dumpster', 30, 0, -16, 2.5, 1.35, 1.35, T.dumpster, 0xffffff, 170, { metal: true });
+    addProp('dumpster', -16, 0, 4, 2.5, 1.35, 1.35, T.dumpster, 0xffffff, 170, { metal: true });
+    addProp('potty', -38.5, 0, 6, 1.15, 2.25, 1.15, T.portapotty, 0xffffff, 35, {});
+    addProp('potty', -38.5, 0, 9, 1.15, 2.25, 1.15, T.portapotty, 0xffffff, 35, {});
+    addProp('potty', -38.5, 0, 12, 1.15, 2.25, 1.15, T.portapotty, 0xffffff, 35, {});
+    addProp('lumber', 2, 0, -16, 2.3, 0.6, 1.1, T.plain, 0xc9a05f, 30, {});
+    addProp('lumber', -2, 0, -20, 2.3, 0.55, 1.1, T.plain, 0xb98a4f, 30, {});
+    addProp('pallet', -22, 0, -8, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('pallet', 26, 0, 6, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('pallet', 30, 0, 26, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('barrel', 27, 0, 12, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrel', 28.2, 0, 13.1, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrel', 12, 0, -13, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrel', -24, 0, 2, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrel', 2, 0, 26, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('spool', 34, 0, -6, 1.5, 1.5, 1.5, T.plain, 0x8a5f3f, 60, {});
+    addProp('spool', -16, 0, 28, 1.5, 1.5, 1.5, T.plain, 0x8a5f3f, 60, {});
+    addProp('generator', 6, 0, -14, 1.6, 1.1, 1.0, T.plain, 0x3f6f4f, 60, { metal: true });
+    addProp('barrier', -30, 0, -3, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    addProp('barrier', -24, 0, 3, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    addProp('barrier', -18, 0, -3, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    addProp('barrier', -12, 0, 3, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    // site lights
+    for (const [lx, lz] of [[-14, 18], [20, -22]]) {
+      buildPost(lx, lz, 5.5, 0.18, 0, steelGeos);
+      (() => { const g = U.shadedBoxGeo(0.7, 0.4, 0.4); g.translate(lx, 5.6, lz); steelGeos.push(g); })();
+    }
+
+    W.spawnPoints = [
+      { x: -40, z: 0 }, { x: 40, z: 0 }, { x: -40, z: -28 }, { x: -40, z: 28 },
+      { x: 40, z: -28 }, { x: 40, z: 28 }, { x: 0, z: -32 }, { x: 0, z: 32 },
+      { x: -20, z: -30 }, { x: 20, z: 30 }, { x: 34, z: 14 }, { x: -34, z: -4 },
+      { x: -6, z: 30 }, { x: 30, z: -28 },
+    ];
+    W.campSpots.push(
+      { x: -27, z: -18, yaw: Math.PI / 2 },
+      { x: -2, z: 20, yaw: Math.PI / 2 },
+      { x: 31, z: 19, yaw: Math.atan2(-31, -19) },
+      { x: 14, z: 13.8, yaw: Math.PI },
+    );
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#a97d4f';
+      x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#b3b7bb';
+      x.fillRect(0, (oz - 2.6) * s, (ox + 10) * s, 5.2 * s);
+      x.fillStyle = '#9c9c98';
+      x.fillRect((ox + 5) * s, (oz - 12) * s, 26 * s, 24 * s);
+    };
+    addSky(0x8fc4e8, { cloudTint: 0xf2ead8 });
+  }
+
+  // ============ MAP 3: VOLCANO ISLAND — sunset, geysers, angry mountain ============
+  function buildIslandMap() {
+    W.bounds = { x: 40, z: 34 };
+    W.teamSpawns = [{ x: -36, z: 0 }, { x: 36, z: 0 }];
+
+    // hand-painted island floor: sea → shallows → sand → jungle
+    const icv = T.cnv(512, 512);
+    const ix = icv.x;
+    const u = (wx) => (wx + 75) / 150 * 512, v = (wz) => (wz + 67) / 134 * 512;
+    ix.fillStyle = '#2e8fae'; ix.fillRect(0, 0, 512, 512);
+    ix.fillStyle = '#7fd4c8';
+    ix.beginPath(); ix.ellipse(256, 256, 205, 196, 0, 0, 7); ix.fill();
+    ix.fillStyle = '#eed08a';
+    ix.beginPath(); ix.ellipse(256, 256, 193, 184, 0, 0, 7); ix.fill();
+    ix.fillStyle = '#5cb84a';
+    ix.beginPath(); ix.ellipse(256, 256, 144, 134, 0, 0, 7); ix.fill();
+    for (let i = 0; i < 22; i++) T.blob(ix, U.rand(130, 380), U.rand(140, 370), U.rand(9, 22), 8, 'rgba(70,160,55,0.5)', null);
+    // dark rock creek bed under the lava runs
+    ix.fillStyle = '#4b4348';
+    for (const r of [[7, -5, 15, 5], [5, 4, 15, 15], [3, 13, 17, 23], [1, 21, 19, 34]])
+      ix.fillRect(u(r[0]), v(r[1]), u(r[2]) - u(r[0]), v(r[3]) - v(r[1]));
+    plane(150, 134, T.tex(icv.c), 0, 0.012, 0);
+    plane(460, 460, T.water(), 0, -0.06, 0).material.map.repeat.set(34, 34);
+    // invisible boundary (the sea is off-limits)
+    addCollider(-46, 0, -38, -40.4, 6, 38, { noShoot: true });
+    addCollider(40.4, 0, -38, 46, 6, 38, { noShoot: true });
+    addCollider(-46, 0, -38, 46, 6, -34.4, { noShoot: true });
+    addCollider(-46, 0, 34.4, 46, 6, 38, { noShoot: true });
+
+    // ---- the volcano: four jumpable tiers + crater full of lava ----
+    const tier = (x0, z0, x1, z1, y0, y1) => {
+      const g = U.shadedBoxGeo(x1 - x0, y1 - y0, z1 - z0);
+      g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+      rockGeos.push(g);
+      addCollider(x0, y0, z0, x1, y1, z1, {});
+    };
+    tier(1, -20, 23, -4, 0, 1.0);
+    tier(3.5, -18, 20.5, -6, 1.0, 2.0);
+    tier(6, -16.5, 18, -7.5, 2.0, 3.0);
+    tier(8, -15, 16, -9, 3.0, 4.0);
+    // crater rim (north gap = the spout)
+    tier(8, -15, 9.2, -9, 4.0, 4.9);
+    tier(14.8, -15, 16, -9, 4.0, 4.9);
+    tier(8, -9.6, 16, -9, 4.0, 4.9);
+    tier(8, -15, 10, -14.5, 4.0, 4.9);
+    tier(14, -15, 16, -14.5, 4.0, 4.9);
+    // crater lava pool
+    plane(5.6, 4.6, T.lava(), 12, 4.06, -12.2);
+    lavas.push({ minx: 9.4, minz: -14.6, maxx: 14.6, maxz: -9.8, y: 4.0 });
+
+    // ---- the lava creek: cuts the island in half, cross at the bridge or the stones ----
+    const creek = [[8, -4, 14, 4], [6, 4, 14, 14], [4, 13, 16, 22], [2, 21, 18, 34]];
+    for (const r of creek) {
+      plane(r[2] - r[0], r[3] - r[1], T.lava(), (r[0] + r[2]) / 2, 0.03, (r[1] + r[3]) / 2);
+      lavas.push({ minx: r[0], minz: r[1], maxx: r[2], maxz: r[3], y: 0 });
+    }
+    // plank bridge (destructible! shoot it out from under someone)
+    buildStairs(4.5, 8, 1, 0, 2.2, 2, 0.3, 0.55);
+    buildStairs(16.1, 8, -1, 0, 2.2, 2, 0.3, 0.55);
+    for (const bx of [6.4, 8.24, 10.08, 11.92, 13.76])
+      addProp('plank', bx, 0.73, 8, 1.86, 0.12, 2.1, T.plywood, 0xd8b075, 22, { step: true });
+    for (const [px2, pz2] of [[5.6, 6.9], [5.6, 9.1], [14.6, 6.9], [14.6, 9.1]]) buildPost(px2, pz2, 1.5, 0.12);
+    // stepping stones (players can hop, bots won't risk it)
+    for (const sx2 of [5, 8, 11, 14]) {
+      const g = U.shadedBoxGeo(1.3, 0.55, 1.3);
+      g.translate(sx2, 0.275, 18);
+      rockGeos.push(g);
+      addCollider(sx2 - 0.65, 0, sx2 === -999 ? 0 : 17.35, sx2 + 0.65, 0.55, 18.65, {});
+    }
+
+    // ---- steam geysers: ride the blast for the high ground ----
+    const geyserDefs = [[-16, -6, 7.5, 0], [-28, 18, 9, 2.6], [26, 8, 8, 5.1], [-8, 28, 10, 1.4]];
+    for (const [gx, gz, period, offset] of geyserDefs) {
+      geysers.push({ x: gx, z: gz, r: 1.6, period, offset });
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const g = U.shadedBoxGeo(0.7, 0.5, 0.7);
+        g.translate(gx + Math.cos(a) * 1.5, 0.25, gz + Math.sin(a) * 1.5);
+        rockGeos.push(g);
+      }
+    }
+
+    // ---- bamboo huts with thatch roofs ----
+    function buildHut(cx, cz) {
+      const hw = 5, hd = 4, ch = 0.72;
+      const mkW = (o, dir, cols, fn) => {
+        const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 3, cw: 1, ch, th: 0.16, kind: 'bamboo', tint: 0xcdb968, hp: 26, house: null });
+        wallFill(wl, fn);
+      };
+      mkW({ ox: cx - hw / 2, oz: cz + hd / 2 }, 'x', hw, (c, r) => c === 2 && r <= 2 ? 1 : 0); // south door
+      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'x', hw, (c, r) => (c === 1 || c === 3) && r === 1 ? 1 : 0);
+      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 1 && r === 1 ? 1 : 0);
+      mkW({ ox: cx + hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 2 && r === 1 ? 1 : 0);
+      const roof = Sheet('thatch', 0xd6a852);
+      const ridgeY = 3 * ch + 1.15;
+      for (let sgn = -1; sgn <= 1; sgn += 2)
+        for (let c = 0; c < hw + 2; c++)
+          for (let j = 0; j < 3; j++) {
+            const t = (j + 0.5) / 3;
+            sheetAdd(roof, cx - hw / 2 - 1 + c + 0.5, ridgeY - t * 1.15, cz + sgn * t * (hd / 2 + 0.6), sgn * 0.46, 'x', 1.05, 0.14, 1.0, 24);
+          }
+      addProp('table', cx + 1, 0, cz - 0.6, 1.4, 0.72, 1.0, T.plain, 0xb98a55, 40, {});
+      W.campSpots.push({ x: cx, z: cz, yaw: 0 });
+      torchPts.push([cx - 1.4, cz + hd / 2 + 0.7], [cx + 1.4, cz + hd / 2 + 0.7]);
+    }
+    const torchPts = [];
+    buildHut(-26, -20);
+    buildHut(-32, 8);
+    buildHut(22, 26);
+    // beach bar: open-air thatch pavilion
+    buildPlatform(-8, 29, 6.5, 4.5, 0.25, 0.25);
+    for (const [px3, pz3] of [[-10.8, 27.2], [-5.2, 27.2], [-10.8, 30.8], [-5.2, 30.8]]) buildPost(px3, pz3, 3.1, 0.17);
+    const barRoof = Sheet('thatch', 0xd6a852);
+    for (let c = 0; c < 8; c++)
+      for (let j = 0; j < 5; j++)
+        sheetAdd(barRoof, -11.5 + c + 0.5, 3.5 + (j - 2) * 0.12, 26.7 + j + 0.5 - 0.7, 0.12, 'x', 1.05, 0.13, 1.06, 22);
+    const bar = WallGrid({ ox: -10.5, oy: 0.25, oz: 30.6, dir: 'x', cols: 5, rows: 2, cw: 1, ch: 0.6, th: 0.2, kind: 'bamboo', tint: 0xcdb968, hp: 26, house: null });
+    wallFill(bar, (c, r) => c === 4 && r >= 0 ? 1 : 0);
+    W.campSpots.push({ x: -8, z: 28.5, yaw: Math.PI });
+    torchPts.push([-12, 26.5], [-4, 26.5]);
+
+    // torches (lit lazily in mapUpdate, after fx resets)
+    for (const [tx2, tz2] of torchPts) buildPost(tx2, tz2, 1.75, 0.13);
+
+    // ---- palms, rocks, beach junk ----
+    const palmSpots = [[-34, -16, 0.4], [-30, -26, 2.2], [30, -18, 5.1], [36, 10, 3.4], [28, 20, 1.1],
+      [-20, 30, 4.2], [-34, 24, 0.9], [20, -28, 2.8], [6, -26, 5.6], [34, 30, 1.9]];
+    for (const [px4, pz4, lean] of palmSpots) buildPalm(px4, pz4, lean);
+    const rockSpots = [[-8, 8, 2.0, 1.3], [-18, -8, 1.7, 1.1], [-2, -24, 1.9, 1.5], [24, 12, 1.6, 1.2], [-24, 26, 1.8, 1.0], [30, 0, 2.2, 1.4]];
+    for (const [rx, rz, rw, rh] of rockSpots) {
+      const g = U.shadedBoxGeo(rw, rh, rw * 0.85);
+      g.translate(rx, rh / 2, rz);
+      rockGeos.push(g);
+      addCollider(rx - rw / 2, 0, rz - rw * 0.425, rx + rw / 2, rh, rz + rw * 0.425, {});
+    }
+    addProp('canoe', 26, 0, -24, 3.6, 0.6, 0.9, T.plain, 0x8a5a2b, 40, {});
+    addProp('chest', 34, 0, -20, 0.95, 0.7, 0.65, T.plain, 0xb8862b, 25, {});
+    addProp('surfboard', -3, 0, 32.4, 0.5, 1.9, 0.16, T.plain, 0xff6a9e, 15, {});
+    addProp('surfboard', -12.5, 0, 31.8, 0.5, 1.9, 0.16, T.plain, 0x40c8e0, 15, {});
+    addProp('drum', -14, 0, 30.5, 0.7, 1.0, 0.7, T.propane, 0x3f8f5f, 20, { metal: true }); // bar fuel drum
+
+    W.spawnPoints = [
+      { x: -36, z: 0 }, { x: 36, z: 0 }, { x: -34, z: -22 }, { x: -34, z: 22 },
+      { x: 34, z: -22 }, { x: 34, z: 24 }, { x: 0, z: -30 }, { x: -2, z: 30 },
+      { x: -20, z: 16 }, { x: 26, z: -10 }, { x: -26, z: -6 }, { x: 22, z: 18 },
+    ];
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#2e8fae'; x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#eed08a';
+      x.beginPath(); x.ellipse(ox * s, oz * s, 56 * s, 48 * s, 0, 0, 7); x.fill();
+      x.fillStyle = '#5cb84a';
+      x.beginPath(); x.ellipse(ox * s, oz * s, 42 * s, 35 * s, 0, 0, 7); x.fill();
+      x.fillStyle = '#4b4348';
+      x.fillRect((ox + 1) * s, (oz - 20) * s, 22 * s, 16 * s);
+      x.fillStyle = '#ff5a12';
+      for (const r of creek) x.fillRect((ox + r[0]) * s, (oz + r[1]) * s, (r[2] - r[0]) * s, (r[3] - r[1]) * s);
+      x.fillRect((ox + 9.4) * s, (oz - 14.6) * s, 5.2 * s, 4.8 * s);
+    };
+
+    // ---- live island behavior ----
+    let fxInited = false;
+    let volcanoT = 14;
+    const volcanoBombs = [];
+    W.mapUpdate = function (dt) {
+      if (!fxInited) { // emitters must outlive fx.reset(), which runs after build
+        fxInited = true;
+        G.fx.addEmitter({ pos: new THREE.Vector3(12, 5.1, -12.2), rate: 2.4, kind: 'smoke', dur: 1e6 });
+        for (const [tx3, tz3] of torchPts) G.fx.addEmitter({ pos: new THREE.Vector3(tx3, 1.85, tz3), rate: 3.2, kind: 'fire', dur: 1e6 });
+        for (const g of geysers) G.fx.addEmitter({ pos: new THREE.Vector3(g.x, 0.4, g.z), rate: 1.4, kind: 'smoke', dur: 1e6 });
+      }
+      for (const g of geysers) { // eruption burst fx on each cycle start
+        const on = ((W.mapClock + g.offset) % g.period) < 1.15;
+        if (on && !g._on) {
+          G.fx.addEmitter({ pos: new THREE.Vector3(g.x, 0.3, g.z), rate: 50, kind: 'water', dur: 1.05 });
+          G.fx.addEmitter({ pos: new THREE.Vector3(g.x, 0.8, g.z), rate: 12, kind: 'smoke', dur: 0.9 });
+        }
+        g._on = on;
+      }
+      // the mountain speaks (host/solo rolls the dice; explosions replicate via evBoom)
+      if (!(G.net && G.net.active && !G.net.isHost)) {
+        volcanoT -= dt;
+        if (volcanoT <= 0) {
+          volcanoT = 24 + U.rand(0, 14);
+          if (G.game) {
+            G.game.banner('THE VOLCANO IS ANGRY', '#ff7a30');
+            G.game.chat('VOLCANO', U.pick(['*rumbling intensifies*', 'special delivery, no refunds', 'BRACE FOR MAGMA']));
+          }
+          G.fx.shake(0.9, 0.9);
+          for (let i = 0; i < 3; i++) {
+            const tx4 = U.rand(-W.bounds.x + 7, W.bounds.x - 7), tz4 = U.rand(-W.bounds.z + 7, W.bounds.z - 7);
+            const delay = 1.4 + i * 0.55;
+            volcanoBombs.push({ x: tx4, z: tz4, t: delay });
+            tmpV.set(12, 5.4, -12.2);
+            G.fx.debris(tmpV, new THREE.Vector3((tx4 - 12) / delay, 12.5, (tz4 + 12.2) / delay), 0.5, 0.5, 0.5, new THREE.Color(0xff6a20), delay + 0.3);
+          }
+        }
+        for (let i = volcanoBombs.length - 1; i >= 0; i--) {
+          const b = volcanoBombs[i];
+          b.t -= dt;
+          if (b.t <= 0) {
+            volcanoBombs.splice(i, 1);
+            tmpV.set(b.x, 0.4, b.z);
+            W.explode(tmpV, 5, 88, { attacker: { name: 'THE VOLCANO', team: -1 }, tag: 'VOLCANO' });
+            if (G.net && G.net.active) G.net.evBoom(tmpV, 5, 88, 'VOLCANO');
+          }
+        }
+      }
+    };
+    addSky(0xff9e63, { cloudTint: 0xffd9c4, sunTint: 0xffb24a, sunPos: [-150, 42, -60], sunScale: 42, clouds: 5 });
+  }
+
+  function buildPalm(x, z, lean) {
+    const dx = Math.cos(lean) * 0.3, dz = Math.sin(lean) * 0.3;
+    let cx = x, cz = z, py = 0;
+    for (let i = 0; i < 4; i++) {
+      const g = U.shadedBoxGeo(0.42 - i * 0.05, 1.35, 0.42 - i * 0.05);
+      g.translate(cx, py + 0.675, cz);
+      palmTrunkGeos.push(g);
+      cx += dx; cz += dz; py += 1.28;
+    }
+    addCollider(x - 0.32, 0, z - 0.32, x + 0.32, 3.6, z + 0.32, { tree: true });
+    const topY = py + 0.35;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + lean;
+      const g = new THREE.PlaneGeometry(3.3, 1.05);
+      g.translate(1.65, 0, 0);
+      g.rotateZ(-0.42);
+      g.rotateY(a);
+      g.translate(cx - dx, topY, cz - dz);
+      frondGeos.push(g);
+    }
+  }
+
   // full rebuild for a fresh match — disposes everything the last build created
-  W.reset = function () {
+  W.reset = function (mapId) {
+    if (mapId && W.maps.find(m => m.id === mapId)) W.mapId = mapId;
     if (grp) {
       grp.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
@@ -1628,6 +2161,8 @@ G.world = (function () {
     cars.length = 0; props.length = 0;
     delayedBreaks.length = 0; dirtyWalls.length = 0; navDirty.length = 0;
     treeCanopyGeos.length = 0; poleGeos.length = 0; poleTops.length = 0; stairGeos.length = 0;
+    steelGeos.length = 0; rockGeos.length = 0; frondGeos.length = 0; palmTrunkGeos.length = 0; sandGeos.length = 0;
+    ladders.length = 0; lavas.length = 0; geysers.length = 0;
     W.campSpots.length = 0;
     W.bill = {}; W.billTotal = 0; W.chunksDestroyed = 0;
     W.build(scene);
@@ -1670,6 +2205,8 @@ G.world = (function () {
       c++;
     }
     updateCars(dt);
+    W.mapClock += dt;
+    if (W.mapUpdate) W.mapUpdate(dt);
     W.flushBatches();
   };
 

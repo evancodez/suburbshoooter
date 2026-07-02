@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- settings ----------
-  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10 };
+  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs' };
   try {
     const s = JSON.parse(localStorage.getItem('blockops_settings') || '{}');
     Object.assign(settings, s);
@@ -157,14 +157,47 @@
     player.vel.x = U.damp(player.vel.x, wishDir.x * speed, accel * 0.4, dt);
     player.vel.z = U.damp(player.vel.z, wishDir.z * speed, accel * 0.4, dt);
 
-    // gravity / jump
+    // gravity / jump / ladders / map hazards
     const floorY = G.world.standHeightAt(player.pos.x, player.pos.z, player.pos.y);
-    if (keys.Space && player.onGround) {
+    player.ladderCd = Math.max(0, (player.ladderCd || 0) - dt);
+    const lad = player.ladderCd > 0 ? null : G.world.ladderAt(player.pos.x, player.pos.z, player.pos.y);
+    const grabbing = !!lad && (keys.KeyW || keys.KeyS || (!player.onGround && player.vel.y < -1));
+    if (grabbing) {
+      player.slideT = -1;
+      if (keys.Space) { // let go with a hop
+        player.vel.y = 3.6;
+        player.ladderCd = 0.45;
+        player.onGround = false;
+      } else {
+        const climb = keys.KeyW ? 3.1 : keys.KeyS ? -3.8 : 0;
+        player.vel.y = 0;
+        player.pos.y = Math.min(player.pos.y + climb * dt, lad.topY);
+        if (player.pos.y < floorY) player.pos.y = floorY;
+        player.onGround = player.pos.y <= floorY + 0.01;
+        if (!player.onGround) {
+          const k = Math.pow(0.002, dt);
+          player.vel.x *= k; player.vel.z *= k;
+        }
+        if (player.pos.y >= lad.topY - 0.001 && keys.KeyW) { // crest: hop onto the deck
+          player.vel.y = 2.6;
+          player.ladderCd = 0.5;
+          player.onGround = false;
+        }
+      }
+    } else if (keys.Space && player.onGround) {
       player.vel.y = 5.6;
       player.onGround = false;
       player.slideT = -1;
     }
-    if (!player.onGround) {
+    // erupting geyser under your feet = free elevator
+    const gey = G.world.geyserBoostAt(player.pos.x, player.pos.z);
+    if (gey && player.pos.y < floorY + 1.4 && player.vel.y < 12) {
+      player.vel.y = 13.5;
+      player.onGround = false;
+      player.slideT = -1;
+      G.fx.shake(0.35, 0.25);
+    }
+    if (!player.onGround && !grabbing) {
       player.vel.y -= 14.5 * dt;
       player.pos.y += player.vel.y * dt;
       if (player.pos.y <= floorY && player.vel.y <= 0) {
@@ -173,10 +206,17 @@
         player.vel.y = 0;
         player.onGround = true;
       }
-    } else {
+    } else if (!grabbing) {
       if (player.pos.y > floorY + 0.05) {
         player.onGround = false; // walked off ledge
       } else player.pos.y = floorY;
+    }
+    // standing in lava is exactly as bad as it sounds
+    player.lavaAcc = (player.lavaAcc || 0) - dt;
+    if (player.alive && G.world.lavaAt(player.pos.x, player.pos.z, player.pos.y) && player.lavaAcc <= 0) {
+      player.lavaAcc = 0.4;
+      game.onPlayerDamage(15, player.pos, { name: 'THE VOLCANO', team: -1, remote: true }, 'LAVA');
+      G.fx.addEmitter({ pos: new THREE.Vector3(player.pos.x, 0.4, player.pos.z), rate: 22, kind: 'fire', dur: 0.25 });
     }
 
     // horizontal move + collide
@@ -186,8 +226,8 @@
     // airborne: raise the step limit so mid-jump you can drift over car
     // hoods/props and land on top instead of being shoved off sideways
     G.world.collideCircle(player.pos, 0.38, player.pos.y, h, player.onGround ? 0.42 : 0.95);
-    player.pos.x = U.clamp(player.pos.x, -70, 70);
-    player.pos.z = U.clamp(player.pos.z, -56, 56);
+    player.pos.x = U.clamp(player.pos.x, -G.world.bounds.x - 4, G.world.bounds.x + 4);
+    player.pos.z = U.clamp(player.pos.z, -G.world.bounds.z - 4, G.world.bounds.z + 4);
 
     // eye height
     const targetEye = player.crouching ? 1.02 : 1.62;
@@ -305,7 +345,7 @@
     const best = pickSpawn(G.net && G.net.active ? player.team : undefined);
     player.pos.set(best.x, 0, best.z);
     player.vel.set(0, 0, 0);
-    player.yaw = Math.atan2(-best.x, -best.z);
+    player.yaw = Math.atan2(best.x, best.z); // face the middle of the map
     player.pitch = 0;
     player.hp = 100;
     player.alive = true;
@@ -463,8 +503,8 @@
 
   // ---------- match flow ----------
   function baseStartMatch(cfg) {
-    G.world.reset();  // town good as new
-    G.fx.reset();     // no leftover blood/debris/smoke
+    G.world.reset(cfg.map);  // build the chosen map fresh
+    G.fx.reset();            // no leftover blood/debris/smoke
     player.team = cfg.myTeam || 0;
     player.hp = 100; player.alive = true;
     player.kills = 0; player.deaths = 0; player.streak = 0; player.bestStreak = 0;
@@ -479,11 +519,12 @@
     game.paused = false;
     G.arsenal.reset();
     G.world.bill = {}; G.world.billTotal = 0; G.world.chunksDestroyed = 0;
-    // spawn on my side, facing the middle of the block
-    const sp = cfg.spawn || (player.team === 0 ? { x: -62, z: 2.5 } : { x: 62, z: -2.5 });
+    // spawn on my side, facing the middle of the map
+    const sp = cfg.spawn || G.world.teamSpawns[player.team] || { x: 0, z: 0 };
     player.pos.set(sp.x, 0, sp.z);
     player.vel.set(0, 0, 0);
-    player.yaw = Math.atan2(-sp.x, -sp.z);
+    // face the map center (camera forward is (-sin yaw, -cos yaw))
+    player.yaw = Math.atan2(sp.x, sp.z);
     player.pitch = 0;
     $('menu').style.display = 'none';
     $('lobby').style.display = 'none';
@@ -505,15 +546,16 @@
     settings.target = numVal('targetInput', 30, 1, 500);
     settings.mins = numVal('timeInput', 10, 1, 90);
     settings.diff = document.querySelector('#diffSel .sel').dataset.v;
+    settings.map = document.querySelector('#mapSel .sel').dataset.v;
     saveSettings();
     if (G.net) G.net.leave();
-    baseStartMatch({ myTeam: 0, target: settings.target, time: settings.mins * 60 });
+    baseStartMatch({ myTeam: 0, target: settings.target, time: settings.mins * 60, map: settings.map });
     const roster = G.botMgr.rosterFor([0, settings.bots]);
     G.botMgr.init(scene, roster, settings.diff, false);
   }
   function startNetMatch(cfg, roster) {
     settings.diff = cfg.diff;
-    baseStartMatch({ myTeam: G.net.myTeam, time: cfg.time, target: cfg.target });
+    baseStartMatch({ myTeam: G.net.myTeam, time: cfg.time, target: cfg.target, map: cfg.map });
     G.botMgr.init(scene, roster, cfg.diff, !G.net.isHost);
   }
   function checkEnd() {
@@ -641,25 +683,29 @@
   const MMOX = 72, MMOZ = 58;
   mmStatic.width = Math.ceil(144 * MMS); mmStatic.height = Math.ceil(116 * MMS);
   let staticMapDirty = true, staticMapT = 0;
+  const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b' };
   function redrawStaticMap() {
     const x = mmStatic.getContext('2d');
     const w2m = (wx, wz) => [(wx + MMOX) * MMS, (wz + MMOZ) * MMS];
-    x.fillStyle = '#3e8f2e';
-    x.fillRect(0, 0, mmStatic.width, mmStatic.height);
-    // roads + sidewalks (main E-W, cross N-S)
-    x.fillStyle = '#b9bcc0';
-    x.fillRect(0, (MMOZ - 7.1) * MMS, mmStatic.width, 2.6 * MMS);
-    x.fillRect(0, (MMOZ + 4.5) * MMS, mmStatic.width, 2.6 * MMS);
-    x.fillRect((MMOX - 7.1) * MMS, 0, 2.6 * MMS, mmStatic.height);
-    x.fillRect((MMOX + 4.5) * MMS, 0, 2.6 * MMS, mmStatic.height);
-    x.fillStyle = '#77797d';
-    x.fillRect(0, (MMOZ - 4.5) * MMS, mmStatic.width, 9 * MMS);
-    x.fillRect((MMOX - 4.5) * MMS, 0, 9 * MMS, mmStatic.height);
+    if (G.world.minimapPaint) {
+      G.world.minimapPaint(x, MMS, MMOX, MMOZ);
+    } else {
+      x.fillStyle = '#3e8f2e';
+      x.fillRect(0, 0, mmStatic.width, mmStatic.height);
+      // roads + sidewalks (main E-W, cross N-S)
+      x.fillStyle = '#b9bcc0';
+      x.fillRect(0, (MMOZ - 7.1) * MMS, mmStatic.width, 2.6 * MMS);
+      x.fillRect(0, (MMOZ + 4.5) * MMS, mmStatic.width, 2.6 * MMS);
+      x.fillRect((MMOX - 7.1) * MMS, 0, 2.6 * MMS, mmStatic.height);
+      x.fillRect((MMOX + 4.5) * MMS, 0, 2.6 * MMS, mmStatic.height);
+      x.fillStyle = '#77797d';
+      x.fillRect(0, (MMOZ - 4.5) * MMS, mmStatic.width, 9 * MMS);
+      x.fillRect((MMOX - 4.5) * MMS, 0, 9 * MMS, mmStatic.height);
+    }
     // walls
     x.fillStyle = '#1a1a1a';
     for (const w of G.world.walls) {
-      const isFence = w.kind === 'fence';
-      x.fillStyle = isFence ? '#7a4f28' : '#1a1a1a';
+      x.fillStyle = MM_WALL_COLORS[w.kind] || '#1a1a1a';
       for (let c = 0; c < w.cols; c++) {
         if (!(w.colMask[c] & 0b111)) continue;
         let wx, wz;
@@ -691,7 +737,7 @@
     x.clearRect(0, 0, S, S);
     x.save();
     x.beginPath(); x.arc(R, R, R - 2, 0, 7); x.clip();
-    x.fillStyle = '#2c661f';
+    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'construction' ? '#8a6640' : '#2c661f';
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);
@@ -759,10 +805,12 @@
       b.classList.add('sel');
     });
   }
-  selGroup('diffSel');
+  selGroup('diffSel'); selGroup('mapSel');
   // preselect from settings
   document.querySelectorAll('#diffSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.diff));
   if (!document.querySelector('#diffSel .sel')) document.querySelector('#diffSel button[data-v="normal"]').classList.add('sel');
+  document.querySelectorAll('#mapSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.map));
+  if (!document.querySelector('#mapSel .sel')) document.querySelector('#mapSel button[data-v="suburbs"]').classList.add('sel');
   $('botCountInput').value = settings.bots;
   $('targetInput').value = settings.target;
   $('timeInput').value = settings.mins;
@@ -863,6 +911,10 @@
       if (document.activeElement !== $(id)) $(id).value = N.lobby.cfg[key] === undefined ? def : N.lobby.cfg[key];
     }
     document.querySelectorAll('#lobbyDiff button').forEach(b => b.classList.toggle('sel', b.dataset.v === N.lobby.cfg.diff));
+    const mapId = N.lobby.cfg.map || 'suburbs';
+    document.querySelectorAll('#lobbyMap button').forEach(b => b.classList.toggle('sel', b.dataset.v === mapId));
+    const mapDef = G.world.maps.find(m => m.id === mapId);
+    $('lobbyMapLabel').textContent = 'MAP: ' + (mapDef ? mapDef.name : mapId).toUpperCase();
     document.querySelectorAll('.hostonly').forEach(el => { el.style.display = isHost ? '' : 'none'; });
     $('lobbyWait').style.display = isHost ? 'none' : 'block';
   }
@@ -880,6 +932,10 @@
   $('lobbyDiff').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && G.net && G.net.isHost) G.net.setCfg('diff', b.dataset.v);
+  });
+  $('lobbyMap').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b && G.net && G.net.isHost) G.net.setCfg('map', b.dataset.v);
   });
   $('copyLinkBtn').addEventListener('click', () => {
     const link = $('lobbyLink').value;

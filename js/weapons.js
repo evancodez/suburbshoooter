@@ -3,15 +3,22 @@ G.arsenal = (function () {
   const A = { nades: [], rockets: [], bombs: [] };
 
   const DEFS = {
-    ar: { name: 'M4 RATTLER', kind: 'ar', auto: true, interval: 0.088, dmg: 26, headMul: 2.3, mag: 30, reserve: 180,
-          spread: 0.8, bloomPer: 0.5, bloomMax: 3.2, adsMul: 0.32, recoil: 1.0, chunkDmg: 15, reload: 1.9, pellets: 1 },
-    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.88, dmg: 13, headMul: 1.6, mag: 8, reserve: 40,
-          spread: 4.4, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.6, chunkDmg: 9, reload: 2.5, pellets: 8, falloff: 24 },
-    sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.45, dmg: 96, headMul: 2.1, mag: 5, reserve: 25,
+    // falloff: damage fades linearly starting at falloffStart over falloff meters, never below falloffFloor
+    ar: { name: 'M4 RATTLER', kind: 'ar', auto: true, interval: 0.088, dmg: 26, headMul: 2.3, mag: 45, reserve: 225,
+          spread: 1.15, bloomPer: 0.62, bloomMax: 4.2, adsMul: 0.32, recoil: 1.35, chunkDmg: 15, reload: 1.9, pellets: 1,
+          falloff: 95, falloffStart: 24, falloffFloor: 0.55 },
+    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.7, dmg: 13, headMul: 1.6, mag: 10, reserve: 40,
+          spread: 4.4, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.6, chunkDmg: 9, reload: 2.5, pellets: 8,
+          falloff: 30, falloffStart: 6, falloffFloor: 0.35 },
+    sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.2, dmg: 96, headMul: 2.1, mag: 5, reserve: 25,
           spread: 5.5, bloomPer: 0, bloomMax: 6, adsMul: 0.012, recoil: 3.4, chunkDmg: 40, reload: 2.9, pellets: 1 },
     rl:  { name: 'HOA VIOLATION', kind: 'rl', auto: false, interval: 1.1, mag: 1, reserve: 5,
           spread: 0.4, bloomPer: 0, bloomMax: 1, adsMul: 0.5, recoil: 4, reload: 2.3, pellets: 0 },
   };
+  function rangeDmg(def, base, dist) {
+    if (!def.falloff) return base;
+    return base * U.clamp(1 - Math.max(0, dist - (def.falloffStart || 0)) / def.falloff, def.falloffFloor || 0.25, 1);
+  }
   const ORDER = ['ar', 'sg', 'sr', 'rl'];
 
   let camera, vmRoot;
@@ -219,8 +226,7 @@ G.arsenal = (function () {
         const hit = G.world.raycast(rayO, rayD, 130, { bots: true, remotes: true, skipTeam: G.player.team });
         if (hit.kind === 'bot') {
           const head = hit.part === 'head';
-          let dmg = def.dmg * (head ? def.headMul : 1);
-          if (def.falloff) dmg *= U.clamp(1 - hit.t / def.falloff, 0.25, 1);
+          const dmg = rangeDmg(def, def.dmg * (head ? def.headMul : 1), hit.t);
           const isClientMP = G.net && G.net.active && !G.net.isHost;
           if (isClientMP) {
             // predicted feedback; host resolves the actual damage
@@ -242,8 +248,7 @@ G.arsenal = (function () {
           if (head) headHit = true;
         } else if (hit.kind === 'remote') {
           const head = hit.part === 'head';
-          let dmg = def.dmg * (head ? def.headMul : 1);
-          if (def.falloff) dmg *= U.clamp(1 - hit.t / def.falloff, 0.25, 1);
+          const dmg = rangeDmg(def, def.dmg * (head ? def.headMul : 1), hit.t);
           hit.remote.hurtFx && hit.remote.hurtFx(rayD, head);
           G.net.evDmgP(hit.remote.id, dmg, G.player.pos.x, G.player.pos.z, G.net.myName, G.net.myTeam, def.name);
           G.player.shotsHit++;
@@ -399,7 +404,8 @@ G.arsenal = (function () {
     const hit = G.world.raycast(rayO, camFwd, 200, {});
     const tx = hit.kind !== 'none' ? hit.point.x : G.player.pos.x + camFwd.x * 40;
     const tz = hit.kind !== 'none' ? hit.point.z : G.player.pos.z + camFwd.z * 40;
-    strikePending = { x: U.clamp(tx, -64, 64), z: U.clamp(tz, -50, 50), t: 2.2, dropped: 0, dropT: 0, mine: true };
+    const bnd = G.world.bounds;
+    strikePending = { x: U.clamp(tx, -bnd.x + 2, bnd.x - 2), z: U.clamp(tz, -bnd.z + 2, bnd.z - 2), t: 2.2, dropped: 0, dropT: 0, mine: true };
     if (G.net && G.net.active) G.net.evStrike(strikePending.x, strikePending.z);
     G.audio.airstrikeCall();
     G.game.banner('AIRSTRIKE INBOUND', '#ffd23e');
@@ -603,8 +609,8 @@ G.arsenal = (function () {
     } else if (m.userData.mag) m.userData.mag.position.y = -0.13;
     // shotgun pump
     if (m.userData.pump) {
-      const sincePump = Math.max(0, fireCd);
-      const pumpK = A.currentId === 'sg' && fireCd > 0.3 ? Math.sin(U.clamp((0.88 - fireCd) * 6, 0, Math.PI)) : 0;
+      const sgInt = DEFS.sg.interval;
+      const pumpK = A.currentId === 'sg' && fireCd > sgInt * 0.34 ? Math.sin(U.clamp((sgInt - fireCd) * (5.3 / sgInt * 0.88), 0, Math.PI)) : 0;
       m.userData.pump.position.z = -0.3 + pumpK * 0.12;
     }
     // switch raise/lower
