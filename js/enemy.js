@@ -212,6 +212,18 @@ G.botMgr = (function () {
     if (!bot) return;
     respawnAt(bot, x, z);
   };
+  // late joiner: this bot was already dead when we arrived — hide it without gore,
+  // the host's next 'bs' event will respawn it normally
+  M.forceDead = function (i) {
+    const bot = M.bots[i];
+    if (!bot) return;
+    bot.alive = false;
+    bot.gibbed = true;
+    bot.respawnT = 999; bot.corpseT = 0;
+    bot.group.visible = false;
+    bot.tag.visible = false;
+    bot.marker.visible = false;
+  };
 
   function respawnAt(bot, x, z) {
     bot.group.position.set(x, 0, z);

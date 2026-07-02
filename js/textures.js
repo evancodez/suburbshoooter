@@ -299,6 +299,25 @@ window.T = (function () {
     border(x, 64, 128, 5);
     return tex(c);
   };
+  T.tiki = function () {
+    const { c, x } = cnv(64, 128);
+    x.fillStyle = '#8a6a45'; x.fillRect(0, 0, 64, 128);
+    x.strokeStyle = 'rgba(45,30,15,0.9)'; x.lineWidth = 4; x.lineCap = 'round';
+    // heavy brow + angry eyes
+    wob(x, 8, 30, 56, 26, 4, 2);
+    x.fillStyle = 'rgba(45,30,15,0.9)';
+    x.fillRect(14, 36, 12, 9); x.fillRect(38, 36, 12, 9);
+    // long nose
+    wob(x, 32, 40, 32, 68, 3, 1.5);
+    wob(x, 24, 68, 40, 68, 2, 1.5);
+    // toothy grimace
+    x.strokeRect(14, 80, 36, 16);
+    for (let px = 20; px <= 44; px += 8) wob(x, px, 80, px, 96, 2, 1);
+    // side carvings
+    wob(x, 6, 108, 58, 112, 5, 2);
+    border(x, 64, 128, 6, 'rgba(35,22,10,0.9)');
+    return tex(c);
+  };
   T.thatch = function () {
     const { c, x } = cnv(128, 128);
     x.fillStyle = '#d6a852'; x.fillRect(0, 0, 128, 128);

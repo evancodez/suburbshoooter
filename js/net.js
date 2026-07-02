@@ -173,7 +173,7 @@ G.net = (function () {
   function handle(msg, fromConn) {
     switch (msg.t) {
       case 'hello': { // client introduced itself (host only)
-        if (!N.isHost || N.active) { fromConn.send({ t: 'nope', why: N.active ? 'match in progress' : 'not hosting' }); return; }
+        if (!N.isHost) { fromConn.send({ t: 'nope', why: 'not hosting' }); return; }
         fromConn._pid = msg.pid;
         let nm = String(msg.name || '').trim().slice(0, 14);
         if (!nm) nm = 'Guest' + (++guestN); // no name yet: number them in join order
@@ -183,6 +183,21 @@ G.net = (function () {
         const b = N.lobby.players.filter(p => p.team === 1).length;
         N.lobby.players.push({ id: msg.pid, name: nm, team: a <= b ? 0 : 1, host: false });
         pushLobby();
+        if (N.active) {
+          // match already running: drop them straight in with the current world state
+          const roster = (N.matchRoster || []).map((r, i) => {
+            const b2 = G.botMgr.bots[i];
+            return { ...r, x: b2 ? +b2.group.position.x.toFixed(1) : 0, z: b2 ? +b2.group.position.z.toFixed(1) : 0 };
+          });
+          fromConn.send({
+            t: 'start', cfg: N.matchCfg, roster, late: true,
+            world: G.world.damageSnapshot(),
+            scores: G.game ? G.game.teamScores : [0, 0],
+            mt: G.game ? Math.round(G.game.matchT) : 0,
+            botsAlive: G.botMgr.bots.map(b2 => b2.alive ? 1 : 0),
+          });
+          if (G.game) G.game.chat('SYSTEM', nm + ' joined the match', true);
+        }
         break;
       }
       case 'name': { // client picked a name in the lobby
@@ -205,7 +220,13 @@ G.net = (function () {
       case 'start':
         N.active = true;
         syncRemotesToLobby();
-        if (N.onStart) N.onStart(msg.cfg, msg.roster);
+        if (N.onStart) N.onStart(msg.cfg, msg.roster, msg);
+        break;
+      case 'roster': // host changed the bot lineup mid-match
+        if (!N.isHost && G.botMgr) {
+          G.botMgr.init(G.scene, msg.roster, (N.lobby && N.lobby.cfg.diff) || 'normal', true);
+        }
+        if (G.game) G.game.chat('SYSTEM', 'the host rearranged the bots', true);
         break;
       case 'st': { // player state
         const id = N.isHost ? fromConn._pid : msg.id;
@@ -474,9 +495,24 @@ G.net = (function () {
       map: N.lobby.cfg.map || 'suburbs',
     };
     const roster = G.botMgr.rosterFor([cfg.botsA, cfg.botsB]);
+    N.matchCfg = cfg;
+    N.matchRoster = roster;
     N.active = true;
     bc({ t: 'start', cfg, roster });
-    if (N.onStart) N.onStart(cfg, roster);
+    if (N.onStart) N.onStart(cfg, roster, {});
+  };
+
+  // host: change bot teams mid-match — everyone rebuilds the bot lineup in place
+  N.applyBots = function (a, b) {
+    if (!N.isHost || !N.active || !N.lobby) return;
+    N.lobby.cfg.botsA = a;
+    N.lobby.cfg.botsB = b;
+    const roster = G.botMgr.rosterFor([a, b]);
+    N.matchRoster = roster;
+    bc({ t: 'roster', roster });
+    G.botMgr.init(G.scene, roster, N.lobby.cfg.diff, false);
+    pushLobby();
+    if (G.game) G.game.chat('SYSTEM', 'bots updated: ' + a + ' green vs ' + b + ' red', true);
   };
 
   // ---------- per-frame ----------

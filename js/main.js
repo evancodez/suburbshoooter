@@ -113,8 +113,29 @@
     if (!pointerLocked && game.state === 'playing') {
       game.paused = true;
       $('pause').style.display = 'flex';
+      renderPauseHost();
     }
   });
+  // host-only mid-match controls on the pause screen
+  function renderPauseHost() {
+    const N = G.net;
+    const on = N && N.active && N.isHost && N.lobby;
+    $('pauseHost').style.display = on ? '' : 'none';
+    if (!on) return;
+    if (document.activeElement !== $('pBotsA')) $('pBotsA').value = N.lobby.cfg.botsA;
+    if (document.activeElement !== $('pBotsB')) $('pBotsB').value = N.lobby.cfg.botsB;
+    let html = '';
+    for (const p of N.lobby.players) {
+      html += `<span class="lplayer" style="display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:6px; background:${p.team === 0 ? '#dcf5dc' : '#f8ded8'}" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''} ⇄</span>`;
+    }
+    $('pausePlayers').innerHTML = html;
+    $('pausePlayers').querySelectorAll('.lplayer').forEach(el => {
+      el.addEventListener('click', () => {
+        const p = N.lobby.players.find(q => q.id === el.dataset.id);
+        if (p) N.setTeam(p.id, 1 - p.team);
+      });
+    });
+  }
 
   // ---------- player update ----------
   const wishDir = new THREE.Vector3();
@@ -161,28 +182,23 @@
     const floorY = G.world.standHeightAt(player.pos.x, player.pos.z, player.pos.y);
     player.ladderCd = Math.max(0, (player.ladderCd || 0) - dt);
     const lad = player.ladderCd > 0 ? null : G.world.ladderAt(player.pos.x, player.pos.z, player.pos.y);
-    const grabbing = !!lad && (keys.KeyW || keys.KeyS || (!player.onGround && player.vel.y < -1));
+    const wantsUp = keys.Space || keys.KeyW; // hold Space (or W) at a ladder to climb
+    const grabbing = !!lad && (wantsUp || keys.KeyS || (!player.onGround && player.vel.y < -1));
     if (grabbing) {
       player.slideT = -1;
-      if (keys.Space) { // let go with a hop
-        player.vel.y = 3.6;
-        player.ladderCd = 0.45;
+      const climb = wantsUp ? 3.1 : keys.KeyS ? -3.8 : 0;
+      player.vel.y = 0;
+      player.pos.y = Math.min(player.pos.y + climb * dt, lad.topY);
+      if (player.pos.y < floorY) player.pos.y = floorY;
+      player.onGround = player.pos.y <= floorY + 0.01;
+      if (!player.onGround) {
+        const k = Math.pow(0.002, dt);
+        player.vel.x *= k; player.vel.z *= k;
+      }
+      if (player.pos.y >= lad.topY - 0.001 && wantsUp) { // crest: hop onto the deck
+        player.vel.y = 2.6;
+        player.ladderCd = 0.5;
         player.onGround = false;
-      } else {
-        const climb = keys.KeyW ? 3.1 : keys.KeyS ? -3.8 : 0;
-        player.vel.y = 0;
-        player.pos.y = Math.min(player.pos.y + climb * dt, lad.topY);
-        if (player.pos.y < floorY) player.pos.y = floorY;
-        player.onGround = player.pos.y <= floorY + 0.01;
-        if (!player.onGround) {
-          const k = Math.pow(0.002, dt);
-          player.vel.x *= k; player.vel.z *= k;
-        }
-        if (player.pos.y >= lad.topY - 0.001 && keys.KeyW) { // crest: hop onto the deck
-          player.vel.y = 2.6;
-          player.ladderCd = 0.5;
-          player.onGround = false;
-        }
       }
     } else if (keys.Space && player.onGround) {
       player.vel.y = 5.6;
@@ -553,10 +569,18 @@
     const roster = G.botMgr.rosterFor([0, settings.bots]);
     G.botMgr.init(scene, roster, settings.diff, false);
   }
-  function startNetMatch(cfg, roster) {
+  function startNetMatch(cfg, roster, extra) {
     settings.diff = cfg.diff;
     baseStartMatch({ myTeam: G.net.myTeam, time: cfg.time, target: cfg.target, map: cfg.map });
     G.botMgr.init(scene, roster, cfg.diff, !G.net.isHost);
+    if (extra && extra.late) {
+      // joined mid-match: fast-forward to the host's world
+      if (extra.world) G.world.applyDamageSnapshot(extra.world);
+      if (extra.scores) game.teamScores = extra.scores;
+      if (extra.mt !== undefined) game.matchT = extra.mt;
+      if (extra.botsAlive) extra.botsAlive.forEach((a, i) => { if (!a) G.botMgr.forceDead(i); });
+      game.banner && game.banner('JOINED MATCH IN PROGRESS', '#7dcfff');
+    }
   }
   function checkEnd() {
     if (game.state === 'over') return;
@@ -992,8 +1016,15 @@
     if (!code) { netError('paste a game link or code'); return; }
     doJoin(code);
   });
+  $('pBotsApply').addEventListener('click', () => {
+    if (!G.net || !G.net.isHost) return;
+    G.net.applyBots(numVal('pBotsA', 0, 0, 20), numVal('pBotsB', 3, 0, 20));
+  });
   if (G.net) {
-    G.net.onLobby = renderLobby;
+    G.net.onLobby = () => {
+      renderLobby();
+      if ($('pause').style.display === 'flex') renderPauseHost();
+    };
     G.net.onStart = startNetMatch;
     G.net.onJoinFail = netError;
     G.net.onClosed = () => {

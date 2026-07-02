@@ -15,8 +15,10 @@ G.world = (function () {
     picnic: 400, swing: 130,
     // construction site
     chainlink: 25, plank: 30, block: 45, barrel: 70, pallet: 90, spool: 120, generator: 800, barrier: 120,
+    crate: 45, paint: 30, tool: 350, barrow: 260,
     // volcano island
     bamboo: 60, thatch: 40, canoe: 700, chest: 5000, surfboard: 350, torch: 25, drum: 90,
+    tiki: 1500, melon: 15,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -233,6 +235,81 @@ G.world = (function () {
     if (wall.hpArr[i] <= 0) destroyChunk(wall, c, r, vel);
   }
   W.damageChunk = damageChunk;
+
+  // ---------- late-join world sync ----------
+  // the host serializes everything that's been destroyed so far; a late joiner
+  // replays it silently on top of the (deterministic) fresh build
+  function destroyChunkSilent(wall, i) {
+    if (!wall.alive[i]) return;
+    wall.alive[i] = 0;
+    const isGlass = wall.type[i] === 3;
+    batches[isGlass ? 'glass' : wall.kind].free(wall.inst[i]);
+    if (!isGlass) {
+      const c = (i / wall.rows) | 0, r = i % wall.rows;
+      wall.colMask[c] &= ~(1 << r);
+      if (wall.house) wall.house.dead++;
+    }
+    wall.inst[i] = -1;
+    W.chunksDestroyed++;
+  }
+  W.damageSnapshot = function () {
+    const w = [];
+    for (const wall of walls) {
+      const dead = [];
+      for (let i = 0; i < wall.type.length; i++)
+        if ((wall.type[i] === 0 || wall.type[i] === 3) && !wall.alive[i]) dead.push(i);
+      if (dead.length) w.push([wall.id, dead]);
+    }
+    const s = [];
+    for (const sh of sheets) {
+      const dead = [];
+      for (let ci = 0; ci < sh.chunks.length; ci++) if (!sh.chunks[ci].alive) dead.push(ci);
+      if (dead.length) s.push([sh.id, dead]);
+    }
+    const c = cars.map(car => [Math.round(Math.max(car.hp, 0)), car.exploded ? 1 : 0]);
+    const p = [];
+    for (let i = 0; i < props.length; i++) if (props[i].dead) p.push(i);
+    return { w, s, c, p, bill: W.bill, total: W.billTotal };
+  };
+  W.applyDamageSnapshot = function (snap) {
+    for (const [wid, dead] of snap.w || []) {
+      const wall = walls[wid];
+      if (wall) for (const i of dead) destroyChunkSilent(wall, i);
+    }
+    for (const [sid, dead] of snap.s || []) {
+      const sh = sheets[sid];
+      if (!sh) continue;
+      for (const ci of dead) {
+        const ch = sh.chunks[ci];
+        if (ch && ch.alive) { ch.alive = 0; batches[sh.kind].free(ch.inst); ch.inst = -1; }
+      }
+    }
+    (snap.c || []).forEach((cs, i) => {
+      const car = cars[i];
+      if (!car) return;
+      car.hp = cs[0];
+      if (cs[1] && !car.exploded) {
+        car.exploded = true;
+        car.wheels.visible = false;
+        car.body.material.color.setHex(0x2a2c30);
+        car.cab.material.color = new THREE.Color(0x232528);
+      }
+    });
+    for (const i of snap.p || []) {
+      const pr = props[i];
+      if (pr && !pr.dead) {
+        pr.dead = true;
+        pr.collider.gone = true;
+        if (pr.mesh.parent) pr.mesh.parent.remove(pr.mesh);
+      }
+    }
+    // don't re-trigger collapses for houses that already fell
+    for (const house of houses) if (house.total && house.dead / house.total > 0.45) house.roofCollapsed = true;
+    if (snap.bill) { W.bill = snap.bill; W.billTotal = snap.total || 0; }
+    navBuild();
+    W.flushBatches();
+    W.minimapDirty = true;
+  };
   W.damageChunkById = function (wid, c, r, dmg) {
     const wall = walls[wid];
     if (wall) damageChunk(wall, c, r, dmg);
@@ -1569,11 +1646,11 @@ G.world = (function () {
       fence: ChunkBatch(T.fence(), 900),
       frame: ChunkBatch(T.fence(), 420),
       glass: ChunkBatch(T.glassTex(), 360, { transparent: true, opacity: 0.62, renderOrder: 4 }),
-      chainlink: ChunkBatch(T.chainlink(), 220, { transparent: true, renderOrder: 3 }),
-      plank: ChunkBatch(T.plywood(), 520),
-      block: ChunkBatch(T.cinder(), 700),
-      bamboo: ChunkBatch(T.bamboo(), 420),
-      thatch: ChunkBatch(T.thatch(), 700),
+      chainlink: ChunkBatch(T.chainlink(), 460, { transparent: true, renderOrder: 3 }),
+      plank: ChunkBatch(T.plywood(), 900),
+      block: ChunkBatch(T.cinder(), 1000),
+      bamboo: ChunkBatch(T.bamboo(), 520),
+      thatch: ChunkBatch(T.thatch(), 800),
     };
     wireMat = new THREE.LineBasicMaterial({ color: 0x222222 });
     hedgeMat = new THREE.MeshBasicMaterial({ map: T.leaf(), vertexColors: true });
@@ -1755,13 +1832,32 @@ G.world = (function () {
     for (const cx2 of [9.2, 18, 26.8])
       for (const cz2 of [-8.2, 0, 8.2]) buildPost(cx2, cz2, 6.6, 0.55, 0, steelGeos);
     buildPlatform(18, 0, 20.4, 18.4, 3.3, 0.35);                   // deck 2
-    buildPlatform(18, 0, 20.4, 18.4, 6.3, 0.35);                   // deck 3
+    // deck 3 in two pieces, leaving a stairwell hole over the NE corner
+    buildPlatform(18, 1.3, 20.4, 15.8, 6.3, 0.35);
+    buildPlatform(14.3, -7.9, 13, 2.6, 6.3, 0.35);
     // big south stairs up to deck 2 + landing
     buildStairs(12, 14.6, 0, -1, 2.4, 10, 0.33, 0.5);
     buildPlatform(12, 9.7, 2.6, 1.8, 3.3, 0.3);
-    // ladders: ground → deck 2 (north face), deck 2 → deck 3 (inside east edge)
+    // interior stairs deck 2 → deck 3 through the stairwell hole
+    buildStairs(26, -7.6, -1, 0, 1.6, 9, 0.34, 0.52, 3.3);
+    // ladders: ground → deck 2 (north + west faces), deck 2 → deck 3 (inside east edge)
     addLadder(22, -8.9, 0, 3.3, 'n');
-    addLadder(27.6, 0, 3.3, 6.3, 'w');
+    addLadder(7.75, 5, 0, 3.3, 'w');
+    addLadder(27.6, 3, 3.3, 6.3, 'w');
+    // deck 2 plywood partition rooms (doorways to weave through)
+    const part1 = WallGrid({ ox: 14.5, oy: 3.65, oz: -8.6, dir: 'z', cols: 12, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
+    wallFill(part1, (c, r) => (c >= 4 && c <= 5) || c >= 10 ? 1 : 0);
+    const part2 = WallGrid({ ox: 14.5, oy: 3.65, oz: 2, dir: 'x', cols: 10, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
+    wallFill(part2, (c, r) => (c >= 3 && c <= 4) ? 1 : (c === 8 && r === 1) ? 1 : 0);
+    // deck 3 rooftop shack (SW corner): two plank walls + a scrap roof
+    const sh1 = WallGrid({ ox: 9, oy: 6.65, oz: 3.2, dir: 'x', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
+    wallFill(sh1, (c) => c === 4 ? 1 : 0);
+    const sh2 = WallGrid({ ox: 14, oy: 6.65, oz: 3.2, dir: 'z', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
+    wallFill(sh2, (c) => c === 1 ? 1 : 0);
+    const shRoof = Sheet('plank', 0xb98a4f);
+    for (let c = 0; c < 6; c++)
+      for (let j = 0; j < 6; j++)
+        sheetAdd(shRoof, 8.7 + c + 0.5, 8.35 + j * 0.06, 3 + j + 0.5, 0.06, 'x', 1.04, 0.1, 1.05, 18);
     // deck 2 plywood windbreak (north) + guardrail (south, gap at the stairs)
     const wb = WallGrid({ ox: 8, oy: 3.65, oz: -9.05, dir: 'x', cols: 20, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
     wallFill(wb, (c, r) => (c >= 8 && c <= 11) ? 1 : ((c === 3 || c === 16) && r === 1) ? 1 : 0);
@@ -1769,7 +1865,7 @@ G.world = (function () {
     wallFill(gr, (c) => (c >= 2 && c <= 5) ? 1 : 0);
     // deck 3 cinder parapet (gaps at ladder crest + corners)
     const pN = WallGrid({ ox: 8, oy: 6.65, oz: -9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
-    wallFill(pN, (c) => (c >= 9 && c <= 10) ? 1 : 0);
+    wallFill(pN, (c) => (c >= 9 && c <= 10) || c >= 13 ? 1 : 0); // open over the stairwell
     const pS = WallGrid({ ox: 8, oy: 6.65, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
     wallFill(pS, (c) => (c >= 4 && c <= 5) ? 1 : 0);
     const pW = WallGrid({ ox: 8.05, oy: 6.65, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
@@ -1810,20 +1906,97 @@ G.world = (function () {
     (() => { const g = U.shadedBoxGeo(0.1, 6.4, 0.1); g.translate(11, 12.15, 24); steelGeos.push(g); })(); // hook cable
     buildPlatform(11, 24, 2.4, 2.4, 8.95, 0.25);                   // hanging pallet perch
 
-    // ---- half-built masonry office ----
-    const oW = (o, dir, cols, fn) => {
-      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 4, cw: 1, ch: 0.72, th: 0.24, kind: 'block', tint: 0xd8d2c4, hp: 45, house: null });
+    // ---- the warehouse: big interior, mezzanine, pallet racks ----
+    plane(20, 16, T.driveway(), -28, 0.024, -18).material.map.repeat.set(6, 5);
+    const wW = (o, dir, cols, fn) => {
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 6, cw: 1, ch: 0.72, th: 0.28, kind: 'block', tint: 0xd8d2c4, hp: 50, house: null });
       wallFill(wl, fn);
     };
-    oW({ ox: -34, oz: -24 }, 'x', 14, (c, r) => ((c >= 3 && c <= 4) || (c >= 9 && c <= 10)) && (r === 1 || r === 2) ? 3 : 0);
-    oW({ ox: -34, oz: -12 }, 'x', 14, (c, r) => (c === 6 || c === 7) && r <= 2 ? 1 : ((c >= 2 && c <= 3) || (c >= 10 && c <= 11)) && (r === 1 || r === 2) ? 3 : 0);
-    oW({ ox: -34, oz: -24 }, 'z', 12, (c, r) => (c === 5 || c === 6) && (r === 1 || r === 2) ? 3 : 0);
-    oW({ ox: -20, oz: -24 }, 'z', 12, (c, r) => (c === 5 || c === 6) && r <= 2 ? 1 : 0);
-    addProp('pallet', -31, 0, -21, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
-    addProp('shelf', -25, 0, -22.6, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    // south wall: roll-up door gap + windows
+    wW({ ox: -38, oz: -10 }, 'x', 20, (c, r) =>
+      (c >= 8 && c <= 11 && r <= 3) ? 1 : ((c >= 2 && c <= 3) || (c >= 16 && c <= 17)) && (r === 2 || r === 3) ? 3 : 0);
+    // north wall: man-door + high windows
+    wW({ ox: -38, oz: -26 }, 'x', 20, (c, r) =>
+      (c === 3 || c === 4) && r <= 2 ? 1 : (c >= 8 && c <= 15) && (r === 3 || r === 4) ? 3 : 0);
+    // west wall: windows
+    wW({ ox: -38, oz: -26 }, 'z', 16, (c, r) => ((c >= 3 && c <= 4) || (c >= 10 && c <= 11)) && (r === 2 || r === 3) ? 3 : 0);
+    // east wall: second big door
+    wW({ ox: -18, oz: -26 }, 'z', 16, (c, r) => (c >= 6 && c <= 8 && r <= 3) ? 1 : (c >= 12 && c <= 13) && (r === 2 || r === 3) ? 3 : 0);
+    // mezzanine along the north half + two ways up
+    buildPlatform(-28, -22.6, 18.4, 6, 2.6, 0.2);
+    buildStairs(-20.6, -18.4, 0, -1, 1.8, 8, 0.33, 0.5);           // stairs at the east end
+    addLadder(-36, -19.55, 0, 2.6, 's');                           // ladder at the west end
+    // mezzanine guardrail (destructible, gaps at stairs + ladder)
+    const mzr = WallGrid({ ox: -37, oy: 2.9, oz: -19.7, dir: 'x', cols: 18, rows: 1, cw: 1, ch: 0.75, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    wallFill(mzr, (c) => (c >= 15 || c <= 1) ? 1 : 0);
+    // plywood roof over the mezzanine only — the south half is open sky
+    const wRoof = Sheet('plank', 0xc9a05f);
+    for (let c = 0; c < 19; c++)
+      for (let j = 0; j < 6; j++)
+        sheetAdd(wRoof, -37.5 + c + 0.5, 4.45 + j * 0.05, -25.7 + j + 0.5, 0.05, 'x', 1.04, 0.12, 1.05, 18);
+    // pallet racks on the open floor: two aisles, climbable shelves with loot
+    for (const rx of [-33.5, -25.5]) {
+      buildPlatform(rx, -13.4, 6, 1.5, 1.25, 0.12);
+      buildPlatform(rx, -13.4, 6, 1.5, 2.45, 0.12);
+      for (const px5 of [rx - 2.9, rx, rx + 2.9]) {
+        buildPost(px5, -14.1, 2.5, 0.14, 0, steelGeos);
+        buildPost(px5, -12.7, 2.5, 0.14, 0, steelGeos);
+      }
+      addProp('crate', rx - 1.6, 1.3, -13.4, 1.1, 0.9, 1.1, T.plain, 0xc9a05f, 25, {});
+      addProp('crate', rx + 1.4, 2.55, -13.4, 1.1, 0.85, 1.1, T.plain, 0xb98a4f, 25, {});
+    }
+    addProp('crate', -30, 0, -17.5, 1.3, 1.1, 1.3, T.plain, 0xc9a05f, 30, {});
+    addProp('crate', -28.6, 0, -16.8, 1.0, 0.8, 1.0, T.plain, 0xb98a4f, 25, {});
+    addProp('pallet', -21, 0, -16, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('tool', -35.5, 0, -12, 1.2, 0.9, 0.6, T.plain, 0xc23b2e, 45, { metal: true });
+    addProp('paint', -36.2, 0, -14, 0.5, 0.6, 0.5, T.plain, 0xe8e8e8, 12, { metal: true });
+    addProp('paint', -35.5, 0, -14.4, 0.5, 0.6, 0.5, T.plain, 0x4a7fd0, 12, { metal: true });
+    addProp('barrel', -19.5, 0, -24.5, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrow', -26, 0, -11.2, 1.1, 0.55, 0.65, T.plain, 0x3f6f4f, 25, { metal: true });
+    W.campSpots.push({ x: -28, z: -22.5, yaw: Math.PI }); // mezzanine overlook
     // pallet step-stack outside the NE corner (peek over the wall)
-    buildPlatform(-19, -26.2, 1.8, 1.8, 0.7, 0.7);
-    buildPlatform(-17.1, -26.2, 1.8, 1.8, 1.4, 1.4);
+    buildPlatform(-19, -27.8, 1.8, 1.8, 0.7, 0.7);
+    buildPlatform(-17.1, -27.8, 1.8, 1.8, 1.4, 1.4);
+
+    // ---- container stack (NE corner yard) ----
+    const container = (cx, cz, w, d, baseY, tint) => {
+      const m = new THREE.Mesh(U.shadedBoxGeo(w, 2.6, d), new THREE.MeshBasicMaterial({ map: T.container(), vertexColors: true, color: tint }));
+      m.position.set(cx, baseY + 1.3, cz);
+      grp.add(m);
+      addCollider(cx - w / 2, baseY, cz - d / 2, cx + w / 2, baseY + 2.6, cz + d / 2, { metal: true });
+      buildPlatform(cx, cz, w + 0.15, d + 0.15, baseY + 2.7, 0.1);
+    };
+    container(26.5, -26.8, 7, 2.8, 0, 0xd06a4a);
+    container(34, -30.4, 7, 2.8, 0, 0x4a7fd0);
+    container(29, -30.4, 3, 2.8, 0, 0x64a86a);
+    container(29.5, -28.5, 6.4, 2.8, 2.7, 0xc8b23e);               // stacked on top
+    addLadder(22.85, -26.8, 0, 2.7, 'w');                          // ground → red roof
+    addLadder(26.3, -28.4, 2.7, 5.4, 'w');                         // red roof → top box
+    addProp('barrel', 31.5, 0, -25.4, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+
+    // ---- framed house skeleton (south yard): studs, plywood, all very shootable ----
+    plane(11, 8, T.driveway(), 0, 0.023, 28);
+    const fk = (o, dir, cols, fn) => {
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 4, cw: 1, ch: 0.72, th: 0.14, kind: 'frame', tint: 0xd8b075, hp: 18, house: null });
+      wallFill(wl, fn);
+    };
+    const studs = (door0, door1) => (c, r) => {
+      if (r === 3) return 0;                  // top plate
+      if (c >= door0 && c <= door1) return 1; // doorway
+      return c % 2 === 0 ? 0 : 1;             // studs
+    };
+    fk({ ox: -5, oz: 24.5 }, 'x', 10, studs(4, 5));
+    fk({ ox: -5, oz: 31.5 }, 'x', 10, studs(1, 2));
+    fk({ ox: -5, oz: 24.5 }, 'z', 7, studs(3, 3));
+    fk({ ox: 5, oz: 24.5 }, 'z', 7, studs(3, 3));
+    // plywood tacked over two corners
+    const ply1 = WallGrid({ ox: -5, oy: 0, oz: 24.4, dir: 'x', cols: 4, rows: 3, cw: 1, ch: 0.72, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    wallFill(ply1, () => 0);
+    const ply2 = WallGrid({ ox: 5.1, oy: 0, oz: 27.5, dir: 'z', cols: 4, rows: 3, cw: 1, ch: 0.72, th: 0.1, kind: 'plank', tint: 0xcfa268, hp: 14, house: null });
+    wallFill(ply2, () => 0);
+    addProp('propane', -3, 0, 26.5, 0.55, 0.8, 0.55, T.propane, 0xffffff, 18, { metal: true });
+    addProp('crate', 3, 0, 30, 1.1, 0.9, 1.1, T.plain, 0xc9a05f, 25, {});
+    W.campSpots.push({ x: 0, z: 28, yaw: Math.PI });
 
     // ---- concrete pipe tunnel (walk through it or over it) ----
     const pipeGeo = new THREE.CylinderGeometry(1.5, 1.5, 6, 12, 1, true);
@@ -2036,9 +2209,11 @@ G.world = (function () {
 
     // ---- palms, rocks, beach junk ----
     const palmSpots = [[-34, -16, 0.4], [-30, -26, 2.2], [30, -18, 5.1], [36, 10, 3.4], [28, 20, 1.1],
-      [-20, 30, 4.2], [-34, 24, 0.9], [20, -28, 2.8], [6, -26, 5.6], [34, 30, 1.9]];
+      [-20, 30, 4.2], [-34, 24, 0.9], [20, -28, 2.8], [6, -26, 5.6], [34, 30, 1.9],
+      [-38, -8, 1.6], [0, 33, 0.7], [38, -14, 4.4], [12, -30, 3.0], [38, 22, 2.5]];
     for (const [px4, pz4, lean] of palmSpots) buildPalm(px4, pz4, lean);
-    const rockSpots = [[-8, 8, 2.0, 1.3], [-18, -8, 1.7, 1.1], [-2, -24, 1.9, 1.5], [24, 12, 1.6, 1.2], [-24, 26, 1.8, 1.0], [30, 0, 2.2, 1.4]];
+    const rockSpots = [[-8, 8, 2.0, 1.3], [-18, -8, 1.7, 1.1], [-2, -24, 1.9, 1.5], [24, 12, 1.6, 1.2], [-24, 26, 1.8, 1.0], [30, 0, 2.2, 1.4],
+      [-12, 20, 1.8, 1.2], [14, -24, 1.6, 1.0], [-28, -14, 1.5, 1.1], [34, 6, 1.9, 1.3]];
     for (const [rx, rz, rw, rh] of rockSpots) {
       const g = U.shadedBoxGeo(rw, rh, rw * 0.85);
       g.translate(rx, rh / 2, rz);
@@ -2047,9 +2222,73 @@ G.world = (function () {
     }
     addProp('canoe', 26, 0, -24, 3.6, 0.6, 0.9, T.plain, 0x8a5a2b, 40, {});
     addProp('chest', 34, 0, -20, 0.95, 0.7, 0.65, T.plain, 0xb8862b, 25, {});
+    addProp('chest', 12, 3.0, -16, 0.95, 0.7, 0.65, T.plain, 0xb8862b, 25, {}); // loot on the volcano's shoulder
     addProp('surfboard', -3, 0, 32.4, 0.5, 1.9, 0.16, T.plain, 0xff6a9e, 15, {});
     addProp('surfboard', -12.5, 0, 31.8, 0.5, 1.9, 0.16, T.plain, 0x40c8e0, 15, {});
     addProp('drum', -14, 0, 30.5, 0.7, 1.0, 0.7, T.propane, 0x3f8f5f, 20, { metal: true }); // bar fuel drum
+
+    // ---- watchtower overlooking the bridge ----
+    for (const [wx2, wz2] of [[-3.1, 0.9], [-0.9, 0.9], [-3.1, 3.1], [-0.9, 3.1]]) buildPost(wx2, wz2, 2.9, 0.17);
+    buildPlatform(-2, 2, 2.9, 2.9, 2.7, 0.16);
+    addLadder(-2, 3.6, 0, 2.7, 's');
+    const wtw = WallGrid({ ox: -3.4, oy: 2.75, oz: 0.55, dir: 'x', cols: 3, rows: 1, cw: 1, ch: 0.6, th: 0.14, kind: 'bamboo', tint: 0xcdb968, hp: 22, house: null });
+    wallFill(wtw, () => 0);
+    const wtw2 = WallGrid({ ox: -3.55, oy: 2.75, oz: 0.55, dir: 'z', cols: 3, rows: 1, cw: 1, ch: 0.6, th: 0.14, kind: 'bamboo', tint: 0xcdb968, hp: 22, house: null });
+    wallFill(wtw2, () => 0);
+    const wtRoof = Sheet('thatch', 0xd6a852);
+    for (let c = 0; c < 4; c++)
+      for (let j = 0; j < 4; j++)
+        sheetAdd(wtRoof, -3.9 + c + 0.5, 4.7 + (j - 1.5) * 0.14, 0.1 + j + 0.5, 0.14, 'x', 1.05, 0.12, 1.05, 18);
+    torchPts.push([-3.4, 4.2]);
+
+    // ---- shipwreck on the west shore ----
+    const hullN = WallGrid({ ox: -34, oy: 0, oz: -13.2, dir: 'x', cols: 8, rows: 3, cw: 1, ch: 0.7, th: 0.16, kind: 'plank', tint: 0x8a5a3b, hp: 24, house: null });
+    wallFill(hullN, () => 0);
+    const hullS = WallGrid({ ox: -34, oy: 0, oz: -9.4, dir: 'x', cols: 8, rows: 3, cw: 1, ch: 0.7, th: 0.16, kind: 'plank', tint: 0x8a5a3b, hp: 24, house: null });
+    wallFill(hullS, () => 0);
+    const hullW = WallGrid({ ox: -34, oy: 0, oz: -13.2, dir: 'z', cols: 4, rows: 3, cw: 1, ch: 0.7, th: 0.16, kind: 'plank', tint: 0x7a4a30, hp: 24, house: null });
+    wallFill(hullW, () => 0);
+    buildPlatform(-30, -11.3, 7.6, 3.4, 1.5, 0.18);                // deck
+    buildStairs(-25.4, -11.3, -1, 0, 2.0, 3, 0.36, 0.5);           // gangway at the stern
+    buildPost(-31.5, -11.3, 5.2, 0.22);                            // mast
+    buildPlatform(-31.5, -11.3, 1.4, 1.4, 4.4, 0.12);              // crow's nest
+    addLadder(-31.5, -10.5, 1.5, 4.4, 's');
+    addProp('crate', -29, 1.6, -11.8, 1.0, 0.8, 1.0, T.plain, 0x9a6b3f, 25, {});
+    addProp('chest', -32.6, 1.6, -10.7, 0.95, 0.7, 0.65, T.plain, 0xb8862b, 25, {});
+    torchPts.push([-27, -9]);
+    W.campSpots.push({ x: -29, z: -11.3, yaw: Math.PI / 2 });
+
+    // ---- tiki statues (they judge you) ----
+    for (const [tx5, tz5, ty] of [[0, -2, 0], [24, -16, 0], [18, 2, 0]])
+      addProp('tiki', tx5, ty, tz5, 1.0, 2.3, 1.0, T.tiki, 0xffffff, 60, {});
+
+    // ---- fruit stall by the stepping stones ----
+    buildPost(21, 11.2, 2.3, 0.15); buildPost(23, 11.2, 2.3, 0.15);
+    const stall = WallGrid({ ox: 20.5, oy: 0, oz: 12.6, dir: 'x', cols: 3, rows: 1, cw: 1, ch: 0.95, th: 0.2, kind: 'bamboo', tint: 0xcdb968, hp: 22, house: null });
+    wallFill(stall, () => 0);
+    const stallRoof = Sheet('thatch', 0xd6a852);
+    for (let c = 0; c < 4; c++)
+      for (let j = 0; j < 3; j++)
+        sheetAdd(stallRoof, 19.9 + c + 0.6, 2.45 - j * 0.18, 10.9 + j + 0.5, 0.2, 'x', 1.06, 0.12, 1.06, 16);
+    addProp('melon', 21.2, 0.95, 12.4, 0.45, 0.4, 0.45, T.plain, 0x3fae4f, 8, {});
+    addProp('melon', 21.9, 0.95, 12.5, 0.45, 0.4, 0.45, T.plain, 0x5fc24f, 8, {});
+    addProp('melon', 22.6, 0.95, 12.3, 0.45, 0.4, 0.45, T.plain, 0xe8b83e, 8, {});
+    W.campSpots.push({ x: 22, z: 10.5, yaw: Math.atan2(-1, 0.6) });
+
+    // ---- bamboo groves (soft cover) + extra beach clutter ----
+    for (const [gx2, gz2] of [[-14, 14], [20, -22], [32, 14]]) {
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const bx2 = gx2 + Math.cos(a) * (0.7 + (i % 2) * 0.5), bz2 = gz2 + Math.sin(a) * (0.7 + (i % 2) * 0.4);
+        buildPost(bx2, bz2, 3.1 + (i % 3) * 0.5, 0.15);
+        const fg = new THREE.PlaneGeometry(1.5, 0.55);
+        fg.translate(0.75, 0, 0);
+        fg.rotateZ(-0.3);
+        fg.rotateY(a * 2.4);
+        fg.translate(bx2, 3.2 + (i % 3) * 0.45, bz2);
+        frondGeos.push(fg);
+      }
+    }
 
     W.spawnPoints = [
       { x: -36, z: 0 }, { x: 36, z: 0 }, { x: -34, z: -22 }, { x: -34, z: 22 },
