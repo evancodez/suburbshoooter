@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BLOCK OPS — Suburban Warfare</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #6cb8ee; }
+  body { font-family: "Comic Sans MS", "Comic Neue", cursive; }
+  #game { position: fixed; inset: 0; }
+  #game canvas { display: block; }
+
+  /* ---------- HUD ---------- */
+  #hud { display: none; position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  .paintbox {
+    background: rgba(255,255,255,0.88);
+    border: 3px solid #111;
+    border-radius: 6px 10px 7px 9px;
+    box-shadow: 2px 3px 0 rgba(0,0,0,0.35);
+    padding: 6px 12px;
+  }
+  #score {
+    position: absolute; top: 14px; left: 14px;
+    transform: rotate(-1deg);
+    font-size: 22px; font-weight: bold;
+  }
+  #score .you { color: #2c9e33; }
+  #score .them { color: #d13030; }
+  #winlabel { font-size: 15px; letter-spacing: 1px; }
+  #timer {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%) rotate(0.6deg);
+    font-size: 22px; font-weight: bold;
+  }
+  #minimapWrap {
+    position: absolute; top: 14px; right: 14px;
+    transform: rotate(1deg);
+    background: rgba(255,255,255,0.85);
+    border: 3px solid #111; border-radius: 50%;
+    box-shadow: 2px 3px 0 rgba(0,0,0,0.35);
+    width: 172px; height: 172px;
+  }
+  #minimap { width: 100%; height: 100%; }
+  #feed {
+    position: absolute; top: 200px; right: 16px;
+    text-align: right; font-size: 15px; font-weight: bold;
+  }
+  .feedline {
+    background: rgba(0,0,0,0.55); color: #fff;
+    padding: 2px 8px; margin-top: 4px; border-radius: 6px;
+    transition: opacity 0.8s;
+  }
+  .ftag { color: #ffd23e; }
+  #streak {
+    position: absolute; right: 18px; top: 44%;
+    font-size: 19px; font-weight: bold; color: #ffd23e;
+    text-shadow: 2px 2px 0 #000;
+    transform: rotate(1.5deg);
+  }
+  #hpwrap {
+    position: absolute; bottom: 18px; left: 16px;
+    width: 230px; transform: rotate(-0.8deg);
+  }
+  #hpbar {
+    height: 20px; border: 3px solid #111; border-radius: 5px 8px 6px 9px;
+    background: rgba(255,255,255,0.85);
+    box-shadow: 2px 3px 0 rgba(0,0,0,0.35);
+    overflow: hidden;
+  }
+  #hpfill { height: 100%; width: 100%; background: #42d64a; transition: width 0.12s; }
+  #ammobox {
+    position: absolute; bottom: 18px; right: 16px;
+    text-align: right; transform: rotate(0.8deg);
+  }
+  #ammo { font-size: 34px; font-weight: bold; line-height: 1; }
+  #wname { font-size: 14px; font-weight: bold; color: #333; }
+  #nades { font-size: 17px; font-weight: bold; color: #444; }
+  #chat {
+    position: absolute; bottom: 54px; left: 16px;
+    font-size: 14px; font-weight: bold;
+  }
+  .chatline {
+    color: #fff; text-shadow: 1px 1px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000;
+    margin-top: 2px; transition: opacity 1s;
+  }
+  .cname { color: #ffd23e; }
+  #banner {
+    position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+    font-size: 38px; font-weight: bold; color: #ffd23e;
+    text-shadow: 3px 3px 0 #000, -2px 2px 0 #000, 2px -2px 0 #000;
+    opacity: 0; transition: opacity 0.25s, transform 0.09s;
+    white-space: nowrap;
+  }
+  #pointpop {
+    position: absolute; top: 58%; left: 50%; transform: translate(-50%, 0);
+    font-size: 20px; font-weight: bold; color: #ffd23e;
+    text-shadow: 2px 2px 0 #000;
+    opacity: 0; transition: opacity 0.4s, transform 0.5s;
+  }
+  /* crosshair */
+  #ch { position: absolute; top: 50%; left: 50%; --gap: 12px; }
+  .chl { position: absolute; background: #fff; outline: 1.5px solid #000; }
+  .chl.t { width: 3px; height: 11px; left: -1.5px; top: calc(-1 * var(--gap) - 11px); }
+  .chl.b { width: 3px; height: 11px; left: -1.5px; top: var(--gap); }
+  .chl.l { width: 11px; height: 3px; top: -1.5px; left: calc(-1 * var(--gap) - 11px); }
+  .chl.r { width: 11px; height: 3px; top: -1.5px; left: var(--gap); }
+  #hitm {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 30px; font-weight: bold; color: #fff;
+    text-shadow: 1px 1px 0 #000;
+    opacity: 0;
+  }
+  #dirind {
+    position: absolute; top: 50%; left: 50%;
+    width: 130px; height: 130px;
+    transform: translate(-50%, -50%);
+    opacity: 0; transition: opacity 0.2s;
+  }
+  #dirind::before {
+    content: ''; position: absolute; top: -12px; left: 50%;
+    transform: translateX(-50%);
+    border-left: 16px solid transparent; border-right: 16px solid transparent;
+    border-bottom: 20px solid rgba(255, 40, 30, 0.85);
+  }
+  #dmg {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: radial-gradient(ellipse at center, transparent 42%, rgba(200, 10, 10, 0.55) 100%);
+    opacity: 0;
+  }
+  #scope {
+    display: none;
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(circle at 50% 50%, transparent 0, transparent 31vmin, rgba(10,10,12,0.985) calc(31vmin + 3px));
+  }
+  #scope::before, #scope::after {
+    content: ''; position: absolute; background: rgba(10,10,12,0.9);
+  }
+  #scope::before { left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; }
+  #scope::after { top: 0; bottom: 0; left: 50%; width: 2px; margin-left: -1px; }
+  #scopedot {
+    display: none;
+    position: fixed; top: 50%; left: 50%; z-index: 7; pointer-events: none;
+    width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px;
+    background: #ff2222; border-radius: 50%; border: 1px solid #660000;
+  }
+  #flash {
+    position: fixed; inset: 0; pointer-events: none; z-index: 4;
+    background: #fff; opacity: 0;
+  }
+
+  /* ---------- screens ---------- */
+  .screen {
+    position: fixed; inset: 0; z-index: 10;
+    display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 14px;
+  }
+  #menu { background: rgba(60, 130, 200, 0.25); }
+  #pause, #death, #end { background: rgba(20, 25, 35, 0.45); }
+  .title {
+    font-size: 74px; font-weight: bold; color: #fff;
+    text-shadow: 4px 4px 0 #111, -3px 3px 0 #111, 3px -3px 0 #111, -3px -3px 0 #111, 6px 8px 0 rgba(0,0,0,0.3);
+    transform: rotate(-2deg);
+    letter-spacing: 2px;
+  }
+  .subtitle {
+    font-size: 22px; font-weight: bold; color: #ffd23e;
+    text-shadow: 2px 2px 0 #111;
+    transform: rotate(-1deg);
+    margin-top: -12px;
+  }
+  .panel {
+    background: rgba(255,255,255,0.94);
+    border: 4px solid #111;
+    border-radius: 10px 16px 12px 18px;
+    box-shadow: 4px 6px 0 rgba(0,0,0,0.35);
+    padding: 18px 26px;
+    max-width: 560px;
+    transform: rotate(-0.5deg);
+  }
+  .panel h3 { font-size: 16px; margin: 10px 0 4px; color: #333; }
+  .btnrow { display: flex; gap: 8px; }
+  .btnrow button, .bigbtn {
+    font-family: inherit; font-weight: bold; font-size: 17px;
+    background: #fff; color: #222;
+    border: 3px solid #111; border-radius: 6px 10px 7px 9px;
+    padding: 6px 16px; cursor: pointer;
+    box-shadow: 2px 3px 0 rgba(0,0,0,0.4);
+    transition: transform 0.06s;
+  }
+  .btnrow button:hover, .bigbtn:hover { transform: rotate(-1.5deg) scale(1.04); }
+  .btnrow button.sel { background: #42d64a; }
+  .bigbtn {
+    font-size: 26px; padding: 10px 42px;
+    background: #42d64a; margin-top: 8px;
+  }
+  .bigbtn.red { background: #e85040; color: #fff; }
+  .sliderrow { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: bold; }
+  .sliderrow input { flex: 1; accent-color: #42d64a; }
+  .sliderrow .val { width: 52px; text-align: right; }
+  .controls {
+    font-size: 13.5px; color: #444; line-height: 1.55;
+    columns: 2; column-gap: 26px; margin-top: 6px;
+  }
+  .controls b { color: #111; }
+  #deathKiller { color: #ff5544; }
+  .deathbig { font-size: 46px; font-weight: bold; color: #ff5544; text-shadow: 3px 3px 0 #111; transform: rotate(-1deg); }
+  .deathsub { font-size: 20px; color: #fff; text-shadow: 2px 2px 0 #111; font-weight: bold; }
+  .tip { font-size: 15px; color: #ffd23e; text-shadow: 1px 1px 0 #111; font-weight: bold; }
+  #endTitle { font-size: 64px; }
+  table { border-collapse: collapse; font-size: 15px; width: 100%; }
+  td { padding: 2px 10px; }
+  td:last-child { text-align: right; font-weight: bold; }
+  .billtotal td { border-top: 3px solid #111; font-size: 17px; color: #c02020; padding-top: 5px; }
+  .endcols { display: flex; gap: 18px; }
+  .endcols .panel { transform: rotate(0.5deg); }
+  #endSnark { font-style: italic; color: #555; font-size: 14px; margin-top: 8px; text-align: center; }
+  #fpsc {
+    position: absolute; top: 192px; right: 22px;
+    font-size: 12px; font-weight: bold; color: #fff;
+    text-shadow: 1px 1px 0 #000;
+  }
+  /* ---------- multiplayer ---------- */
+  .mprow { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .mprow input[type=text] {
+    font-family: inherit; font-weight: bold; font-size: 15px;
+    border: 3px solid #111; border-radius: 6px 9px 7px 8px;
+    padding: 5px 10px; flex: 1; min-width: 0;
+  }
+  #mpStatus { font-size: 13px; font-weight: bold; margin-top: 4px; min-height: 17px; }
+  #lobbyPlayers { display: flex; gap: 16px; margin: 8px 0; }
+  .teamcol {
+    flex: 1; min-width: 190px;
+    border: 3px solid #111; border-radius: 8px 12px 9px 11px;
+    padding: 8px 12px;
+  }
+  .teamcol.team0 { background: #dcf5dc; }
+  .teamcol.team1 { background: #f8ded8; }
+  .teamcol h3 { margin: 0 0 6px !important; }
+  .lplayer {
+    font-size: 16px; font-weight: bold; padding: 2px 4px;
+    cursor: pointer; border-radius: 4px;
+  }
+  .lplayer:hover { background: rgba(255,255,255,0.6); }
+  .swapbtn { color: #777; font-size: 13px; }
+  .lbots { font-size: 13.5px; color: #555; font-weight: bold; margin-top: 4px; }
+  .stepper { display: inline-flex; align-items: center; gap: 8px; font-weight: bold; }
+  .stepper button {
+    font-family: inherit; font-weight: bold; font-size: 16px;
+    background: #fff; border: 3px solid #111; border-radius: 6px;
+    width: 30px; cursor: pointer; box-shadow: 1px 2px 0 rgba(0,0,0,0.35);
+  }
+  #lobbyLink { font-size: 12px !important; color: #333; }
+  #lobbyWait { font-size: 14px; font-weight: bold; color: #555; font-style: italic; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="dmg"></div>
+<div id="flash"></div>
+<div id="scope"><div id="scopedot" style="display:block"></div></div>
+
+<div id="hud">
+  <div id="score" class="paintbox">
+    <span class="you" id="scoreyou">0</span> — <span class="them" id="scorethem">0</span>
+    <div id="winlabel">TIED</div>
+  </div>
+  <div id="timer" class="paintbox">10:00</div>
+  <div id="minimapWrap"><canvas id="minimap" width="172" height="172"></canvas></div>
+  <div id="feed"></div>
+  <div id="streak"></div>
+  <div id="hpwrap">
+    <div id="hpbar"><div id="hpfill"></div></div>
+  </div>
+  <div id="chat"></div>
+  <div id="ammobox" class="paintbox">
+    <div id="ammo">30 / 180</div>
+    <div id="wname">M4 RATTLER</div>
+    <div id="nades">✸ 2</div>
+  </div>
+  <div id="banner"></div>
+  <div id="pointpop"></div>
+  <div id="ch">
+    <div class="chl t"></div><div class="chl b"></div><div class="chl l"></div><div class="chl r"></div>
+  </div>
+  <div id="hitm">✕</div>
+  <div id="dirind"></div>
+  <div id="fpsc"></div>
+</div>
+
+<div id="menu" class="screen">
+  <div class="title">BLOCK OPS</div>
+  <div class="subtitle">~ suburban warfare ~</div>
+  <div class="panel">
+    <h3>ENEMIES</h3>
+    <div class="btnrow" id="botCount">
+      <button data-v="3">3</button><button data-v="6" class="sel">6</button><button data-v="9">9</button>
+    </div>
+    <h3>DIFFICULTY</h3>
+    <div class="btnrow" id="diffSel">
+      <button data-v="easy">LIL TIMMY</button><button data-v="normal" class="sel">SWEATY</button><button data-v="hard">NO LIFE</button>
+    </div>
+    <h3>MULTIPLAYER — play with friends</h3>
+    <div class="mprow">
+      <input type="text" id="nameInput" maxlength="14" placeholder="your name">
+      <button class="btnrow-btn bigbtn" id="hostBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#7dcfff">HOST</button>
+    </div>
+    <div class="mprow">
+      <input type="text" id="joinInput" placeholder="paste game link or code">
+      <button class="bigbtn" id="joinBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#fff">JOIN</button>
+    </div>
+    <div id="mpStatus"></div>
+    <h3>SETTINGS</h3>
+    <div class="sliderrow">SENS <input type="range" id="sensSlider" min="0.2" max="3" step="0.05"><span class="val" id="sensSliderVal">1.00</span></div>
+    <div class="sliderrow">VOL <input type="range" id="volSlider" min="0" max="1" step="0.05"><span class="val" id="volSliderVal">80%</span></div>
+    <div class="sliderrow">FOV <input type="range" id="fovSlider" min="60" max="105" step="1"><span class="val" id="fovSliderVal">78°</span></div>
+    <h3>CONTROLS</h3>
+    <div class="controls">
+      <div><b>WASD</b> move</div>
+      <div><b>MOUSE</b> aim / <b>LMB</b> fire</div>
+      <div><b>RMB</b> aim down sights</div>
+      <div><b>SHIFT</b> sprint</div>
+      <div><b>SPACE</b> jump</div>
+      <div><b>C</b> crouch (+sprint = slide)</div>
+      <div><b>R</b> reload</div>
+      <div><b>1/2/3/4</b> + wheel: weapons</div>
+      <div><b>3</b> sniper (RMB to scope)</div>
+      <div><b>G</b> grenade</div>
+      <div><b>F</b> knife</div>
+      <div><b>5</b> airstrike (5 streak)</div>
+      <div><b>ESC</b> pause</div>
+    </div>
+  </div>
+  <button class="bigbtn" id="deployBtn">DEPLOY</button>
+  <div class="tip">first to 30 kills wins. everything is destructible. property damage is encouraged.</div>
+</div>
+
+<div id="lobby" class="screen">
+  <div class="title" style="font-size:52px">LOBBY</div>
+  <div class="panel" style="max-width:640px">
+    <div class="mprow">
+      <b>INVITE LINK</b>
+      <input type="text" id="lobbyLink" readonly>
+      <button class="bigbtn" id="copyLinkBtn" style="font-size:14px; padding:4px 12px; margin:0; background:#7dcfff">COPY</button>
+    </div>
+    <div style="font-size:12.5px; color:#666; margin-top:2px">or share the code: <b id="lobbyCode"></b> — friends open the game and paste it under JOIN</div>
+    <div id="lobbyPlayers"></div>
+    <div class="hostonly" style="font-size:13px; color:#666">click a player to swap their team</div>
+    <div class="mprow hostonly">
+      <span class="stepper"><b>GREEN BOTS</b> <button id="botsAMinus">−</button><span id="botsAVal">0</span><button id="botsAPlus">+</button></span>
+      <span class="stepper" style="margin-left:14px"><b>RED BOTS</b> <button id="botsBMinus">−</button><span id="botsBVal">3</span><button id="botsBPlus">+</button></span>
+    </div>
+    <div class="mprow hostonly">
+      <b>DIFFICULTY</b>
+      <div class="btnrow" id="lobbyDiff">
+        <button data-v="easy">LIL TIMMY</button><button data-v="normal" class="sel">SWEATY</button><button data-v="hard">NO LIFE</button>
+      </div>
+    </div>
+    <div id="lobbyWait" style="display:none">waiting for the host to start…</div>
+  </div>
+  <div style="display:flex; gap:12px">
+    <button class="bigbtn hostonly" id="lobbyStartBtn">START MATCH</button>
+    <button class="bigbtn red" id="lobbyLeaveBtn" style="font-size:18px">LEAVE</button>
+  </div>
+</div>
+
+<div id="pause" class="screen">
+  <div class="deathbig" style="color:#ffd23e">PAUSED</div>
+  <div class="panel">
+    <div class="sliderrow">SENS <input type="range" id="sensSlider2" min="0.2" max="3" step="0.05"><span class="val" id="sensSlider2Val">1.00</span></div>
+    <div class="sliderrow">VOL <input type="range" id="volSlider2" min="0" max="1" step="0.05"><span class="val" id="volSlider2Val">80%</span></div>
+    <div class="sliderrow">FOV <input type="range" id="fovSlider2" min="60" max="105" step="1"><span class="val" id="fovSlider2Val">78°</span></div>
+  </div>
+  <button class="bigbtn" id="resumeBtn">RESUME</button>
+  <div style="display:flex; gap:12px">
+    <button class="bigbtn red" id="restartBtn" style="font-size:18px">RESTART</button>
+    <button class="bigbtn" id="menuBtn" style="font-size:18px; background:#fff">MAIN MENU</button>
+  </div>
+</div>
+
+<div id="death" class="screen">
+  <div class="deathbig">YOU GOT WRECKED</div>
+  <div class="deathsub">by <span id="deathKiller">???</span></div>
+  <div class="deathsub" style="font-size:16px">respawning in <span id="deathTimer">3.0</span>s</div>
+  <div class="tip" id="deathTip"></div>
+</div>
+
+<div id="end" class="screen">
+  <div class="title" id="endTitle">VICTORY</div>
+  <div class="endcols">
+    <div class="panel">
+      <h3 style="margin-top:0">MATCH STATS</h3>
+      <table id="endStats"></table>
+    </div>
+    <div class="panel">
+      <h3 style="margin-top:0">PROPERTY DAMAGE BILL</h3>
+      <table id="endBill"></table>
+      <div id="endSnark"></div>
+    </div>
+  </div>
+  <div style="display:flex; gap:12px">
+    <button class="bigbtn" id="againBtn">PLAY AGAIN</button>
+    <button class="bigbtn" id="endMenuBtn" style="background:#fff">MAIN MENU</button>
+  </div>
+</div>
+
+<script src="js/three.min.js?v=3"></script>
+<script src="js/peerjs.min.js?v=3"></script>
+<script src="js/util.js?v=3"></script>
+<script src="js/textures.js?v=3"></script>
+<script src="js/audio.js?v=3"></script>
+<script src="js/effects.js?v=3"></script>
+<script src="js/world.js?v=3"></script>
+<script src="js/enemy.js?v=3"></script>
+<script src="js/weapons.js?v=3"></script>
+<script src="js/net.js?v=3"></script>
+<script src="js/main.js?v=3"></script>
+</body>
+</html>
