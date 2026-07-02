@@ -1089,7 +1089,11 @@ G.world = (function () {
     W.inExplosion = true;
     G.fx.explosionFX(pos, radius);
     G.audio.explosion(pos, radius > 6);
-    if (G.botMgr) G.botMgr.onNoise(pos, 75);
+    // explosions repel the AI — nobody strolls INTO an airstrike
+    if (G.botMgr) {
+      if (G.botMgr.onDanger) G.botMgr.onDanger(pos, radius + 6);
+      G.botMgr.onNoise(pos, 42);
+    }
     // walls
     const r2 = radius * radius;
     for (let wi = 0; wi < walls.length; wi++) {
@@ -1504,14 +1508,18 @@ G.world = (function () {
       list.push(g);
     }
     const grab = 0.62;
+    const fx = face === 'e' ? 1 : face === 'w' ? -1 : 0;
+    const fz = face === 's' ? 1 : face === 'n' ? -1 : 0;
     ladders.push({
       minx: x - (along === 'x' ? 0.55 : 0) - (face === 'w' ? grab : 0.06),
       maxx: x + (along === 'x' ? 0.55 : 0) + (face === 'e' ? grab : 0.06),
       minz: z - (along === 'z' ? 0.55 : 0) - (face === 'n' ? grab : 0.06),
       maxz: z + (along === 'z' ? 0.55 : 0) + (face === 's' ? grab : 0.06),
       baseY, topY,
+      cx: x, cz: z, fx, fz, // rail center + which side you hang on (bots use these)
     });
   }
+  W.ladders = ladders;
 
   function buildShed(cx, cz, tint) {
     const sw = 4, sd = 3, ch = 0.75;

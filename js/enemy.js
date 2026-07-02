@@ -567,6 +567,28 @@ G.botMgr = (function () {
       }
       return;
     }
+    // ladder climb in progress: hands on rails, rung by rung
+    if (bot.climb) {
+      const L = bot.climb;
+      bp.x = U.damp(bp.x, L.cx + L.fx * 0.45, 10, dt);
+      bp.z = U.damp(bp.z, L.cz + L.fz * 0.45, 10, dt);
+      bp.y += 2.6 * dt;
+      bot.speedNow = 1.2;
+      bot.animPhase += dt * 6;
+      bot.yaw = bot.targetYaw = Math.atan2(-L.fx, -L.fz); // face the rungs
+      bot.group.rotation.y = bot.yaw;
+      if (bp.y >= L.topY) { // crest: step onto the deck
+        bp.x = L.cx - L.fx * 1.0;
+        bp.z = L.cz - L.fz * 1.0;
+        bp.y = G.world.standHeightAt(bp.x, bp.z, L.topY + 0.4);
+        bot.climb = null;
+        bot.path = null;
+        bot.ladderCd = 0.6; // short: chained climbs continue promptly
+      }
+      animate(bot, dt, false, null, 10);
+      return;
+    }
+    bot.ladderCd = Math.max(0, (bot.ladderCd || 0) - dt);
 
     // re-target periodically
     bot.tgtCheckT -= dt;
@@ -583,6 +605,29 @@ G.botMgr = (function () {
 
     const t = bot.tgt;
     const dist = tgtValid(bot) ? U.dist2d(bp.x, bp.z, t.pos.x, t.pos.z) : 99;
+
+    // prey is up on a deck somewhere: find a ladder and go get them
+    // (any upward ladder works — chained climbs re-trigger on the next floor)
+    if (!bot.climb && bot.state !== 'ladder' && bot.ladderCd <= 0 && tgtValid(bot) &&
+        (bot.state === 'hunt' || bot.state === 'investigate' || (bot.state === 'combat' && !bot.canSee)) &&
+        t.pos.y - bp.y > 2.2 && dist < 26) {
+      let bestL = null, bestScore = 26;
+      for (const L of (G.world.ladders || [])) {
+        if (L.topY < bp.y + 1.8) continue;              // must lead upward from here
+        if (L.topY > t.pos.y + 3.5) continue;           // not way past them
+        if (Math.abs(L.baseY - bp.y) > 1.6) continue;   // base reachable from my floor
+        // height progress toward the prey matters more than a short walk
+        const score = U.dist2d(bp.x, bp.z, L.cx + L.fx * 0.5, L.cz + L.fz * 0.5) * 0.6 +
+                      Math.abs(L.topY - t.pos.y) * 2.5;
+        if (score < bestScore) { bestScore = score; bestL = L; }
+      }
+      if (bestL) {
+        bot.state = 'ladder';
+        bot.ladderTgt = bestL;
+        bot.stateT = 0;
+        bot.path = null;
+      }
+    }
 
     // grenade dodge
     if (G.arsenal && bot.fleeT <= 0) {
@@ -612,9 +657,23 @@ G.botMgr = (function () {
         bot.repathT -= dt;
         if (!bot.path || bot.repathT <= 0 || followPath(bot, baseSpeed)) {
           const anchor = tgtValid(bot) ? t.pos : { x: 0, z: 0 };
-          const a = U.rand(0, Math.PI * 2), r = U.rand(14, 36);
           const bnd = G.world.bounds || { x: 55, z: 37 };
-          setPath(bot, U.clamp(anchor.x + Math.cos(a) * r, -bnd.x, bnd.x), U.clamp(anchor.z + Math.sin(a) * r, -bnd.z, bnd.z));
+          // three candidate spots — take the one farthest from the squad, skip craters
+          let best = null, bestScore = -1;
+          for (let k = 0; k < 3; k++) {
+            const a = U.rand(0, Math.PI * 2), r = U.rand(14, 36);
+            const cx = U.clamp(anchor.x + Math.cos(a) * r, -bnd.x, bnd.x);
+            const cz = U.clamp(anchor.z + Math.sin(a) * r, -bnd.z, bnd.z);
+            if (inDanger(cx, cz, 2)) continue;
+            let minMate = 99;
+            for (const other of M.bots) {
+              if (other === bot || !other.alive || other.team !== bot.team) continue;
+              minMate = Math.min(minMate, U.dist2d(cx, cz, other.group.position.x, other.group.position.z));
+            }
+            if (minMate > bestScore) { bestScore = minMate; best = { x: cx, z: cz }; }
+          }
+          if (best) setPath(bot, best.x, best.z);
+          else bot.repathT = 0.6;
         }
         if (bot.moveDir.lengthSq() > 0) bot.targetYaw = Math.atan2(bot.moveDir.x, bot.moveDir.z);
         break;
@@ -722,6 +781,23 @@ G.botMgr = (function () {
         } else if (bot.moveDir.lengthSq() > 0) bot.targetYaw = Math.atan2(bot.moveDir.x, bot.moveDir.z);
         break;
       }
+      case 'ladder': {
+        const L = bot.ladderTgt;
+        bot.stateT += dt;
+        if (!L || bot.stateT > 9) { bot.state = 'hunt'; bot.ladderTgt = null; bot.ladderCd = 5; bot.path = null; break; }
+        const gx = L.cx + L.fx * 0.55, gz = L.cz + L.fz * 0.55; // stand at the grab side
+        bot.repathT -= dt;
+        if (!bot.path || bot.repathT <= 0) setPath(bot, gx, gz);
+        followPath(bot, baseSpeed * 1.2);
+        if (bot.moveDir.lengthSq() > 0) bot.targetYaw = Math.atan2(bot.moveDir.x, bot.moveDir.z);
+        if (U.dist2d(bp.x, bp.z, gx, gz) < 0.85 && Math.abs(bp.y - L.baseY) < 1.2) {
+          bot.climb = L;          // hands on
+          bot.state = 'hunt';
+          bot.ladderTgt = null;
+          bot.path = null;
+        }
+        break;
+      }
     }
 
     if (bot.fleeT > 0) {
@@ -731,15 +807,24 @@ G.botMgr = (function () {
     }
     if (bot.staggerT > 0) bot.speedNow *= 0.35;
 
-    // separation — keep squads loose
+    // separation — keep squads loose (wider bubble outside of firefights)
+    const sepR = bot.state === 'combat' ? 2.1 : 3.4;
     for (const other of M.bots) {
       if (other === bot || !other.alive || other.team !== bot.team) continue;
+      if (Math.abs(other.group.position.y - bp.y) > 1.5) continue; // different floor, not crowding
       const dx = bp.x - other.group.position.x, dz = bp.z - other.group.position.z;
       const d2 = dx * dx + dz * dz;
-      if (d2 < 4.4 && d2 > 0.0001) {
+      if (d2 < sepR * sepR && d2 > 0.0001) {
         const d = Math.sqrt(d2);
-        bot.moveDir.x += (dx / d) * (2.1 - d) * 1.4;
-        bot.moveDir.z += (dz / d) * (2.1 - d) * 1.4;
+        bot.moveDir.x += (dx / d) * (sepR - d) * 1.3;
+        bot.moveDir.z += (dz / d) * (sepR - d) * 1.3;
+      }
+    }
+    // don't casually stroll into a fresh crater zone
+    if (bot.state !== 'combat' && bot.fleeT <= 0 && bot.moveDir.lengthSq() > 0.001) {
+      const aheadX = bp.x + bot.moveDir.x * 3, aheadZ = bp.z + bot.moveDir.z * 3;
+      if (inDanger(aheadX, aheadZ, 0) && !inDanger(bp.x, bp.z, 0)) {
+        bot.moveDir.set(-bot.moveDir.z, 0, bot.moveDir.x); // slide around the edge
       }
     }
 
@@ -754,13 +839,22 @@ G.botMgr = (function () {
     }
     bp.y = G.world.standHeightAt(bp.x, bp.z, bp.y);
 
-    // stuck: repath, then vault/bash
+    // stuck: repath → try a different route → vault/bash as a last resort
     bot.stuckT += dt;
     if (bot.stuckT > 1.1) {
       if (bot.speedNow > 0 && U.dist2d(bp.x, bp.z, bot.lastPos.x, bot.lastPos.z) < 0.35) {
         bot.path = null;
         bot.stuckN++;
-        if (bot.stuckN >= 2) { unstick(bot); bot.stuckN = 0; }
+        if (bot.stuckN === 2) {
+          // plan B: approach from a different angle instead of ramming the same wall
+          if (bot.state === 'ladder') { bot.state = 'hunt'; bot.ladderTgt = null; bot.ladderCd = 5; }
+          bot.lastKnown.x += U.rand(-7, 7);
+          bot.lastKnown.z += U.rand(-7, 7);
+          bot.pathBias = 0.7 + Math.random() * 0.8; // different heuristic = different corridor
+        } else if (bot.stuckN >= 3) {
+          unstick(bot);
+          bot.stuckN = 0;
+        }
       } else bot.stuckN = 0;
       bot.lastPos.copy(bp);
       bot.stuckT = 0;
@@ -825,7 +919,9 @@ G.botMgr = (function () {
     }
     bot.speedNow = bot.netSpd;
     if (bot.netSpd > 0.3) bot.animPhase += bot.netSpd * dt * 2.4;
-    bp.y = G.world.standHeightAt(bp.x, bp.z, bp.y);
+    // follow the host's height (ladders/decks); fall back to local ground fit
+    const wantY = bot.netY !== undefined ? bot.netY : G.world.standHeightAt(bp.x, bp.z, bp.y);
+    bp.y = Math.abs(wantY - bp.y) > 3 ? wantY : U.damp(bp.y, wantY, 10, dt);
     let dy = bot.netYaw - bot.yaw;
     while (dy > Math.PI) dy -= Math.PI * 2;
     while (dy < -Math.PI) dy += Math.PI * 2;
@@ -838,13 +934,14 @@ G.botMgr = (function () {
     bot.marker.visible = !!friendly;
   }
   M.applySnapshot = function (arr) {
-    // arr: flat [x, z, yaw, spd, aim, hp] per bot
+    // arr: flat [x, z, yaw, spd, aim, hp, y] per bot
     for (let i = 0; i < M.bots.length; i++) {
-      const o = i * 6;
-      if (o + 5 >= arr.length) break;
+      const o = i * 7;
+      if (o + 6 >= arr.length) break;
       const b = M.bots[i];
       b.netX = arr[o]; b.netZ = arr[o + 1]; b.netYaw = arr[o + 2];
       b.netSpd = arr[o + 3]; b.netAim = arr[o + 4] > 0; b.hp = arr[o + 5];
+      b.netY = arr[o + 6];
     }
   };
   M.snapshot = function () {
@@ -852,7 +949,7 @@ G.botMgr = (function () {
     for (const b of M.bots) {
       const p = b.group.position;
       const aiming = b.state === 'combat' || b.state === 'cover' || b.alertT >= 0;
-      arr.push(+p.x.toFixed(2), +p.z.toFixed(2), +b.yaw.toFixed(2), +b.speedNow.toFixed(1), aiming ? 1 : 0, Math.round(b.hp));
+      arr.push(+p.x.toFixed(2), +p.z.toFixed(2), +b.yaw.toFixed(2), +b.speedNow.toFixed(1), aiming ? 1 : 0, Math.round(b.hp), +p.y.toFixed(2));
     }
     return arr;
   };
@@ -889,16 +986,58 @@ G.botMgr = (function () {
     return roster;
   };
   M.update = function (dt) {
+    for (let i = dangers.length - 1; i >= 0; i--) {
+      dangers[i].t -= dt;
+      if (dangers[i].t <= 0) dangers.splice(i, 1);
+    }
     for (const b of M.bots) updateBot(b, dt);
   };
+  // ---------- danger memory ----------
+  // recent explosions leave a "do not enter" zone; bots caught inside scatter
+  const dangers = [];
+  M.dangers = dangers;
+  M.onDanger = function (pos, radius) {
+    if (M.puppet) return;
+    dangers.push({ x: pos.x, z: pos.z, r: radius, t: 8 });
+    if (dangers.length > 12) dangers.shift();
+    for (const b of M.bots) {
+      if (!b.alive) continue;
+      const bp = b.group.position;
+      const d = U.dist2d(pos.x, pos.z, bp.x, bp.z);
+      if (d < radius + 4 && b.fleeT <= 0) {
+        b.fleeDir.set(bp.x - pos.x, 0, bp.z - pos.z);
+        if (b.fleeDir.lengthSq() < 0.01) b.fleeDir.set(Math.sin(b.idx), 0, Math.cos(b.idx));
+        b.fleeDir.normalize();
+        b.fleeT = U.rand(1.0, 1.8);
+        b.path = null;
+      }
+    }
+  };
+  function inDanger(x, z, pad) {
+    for (let i = 0; i < dangers.length; i++) {
+      const d = dangers[i];
+      if (U.dist2d(x, z, d.x, d.z) < d.r + (pad || 0)) return true;
+    }
+    return false;
+  }
   M.onNoise = function (pos, radius) {
     if (M.puppet) return;
-    for (const b of M.bots) {
-      if (!b.alive || b.state === 'combat' || b.state === 'cover') continue;
-      if (U.dist2d(pos.x, pos.z, b.group.position.x, b.group.position.z) < radius) {
+    // gunfire draws attention — but only a couple of the closest bots commit,
+    // the rest keep doing their own thing (no more zombie stampedes)
+    let responders = 0;
+    const sorted = M.bots.filter(b => b.alive && b.state !== 'combat' && b.state !== 'cover' &&
+      U.dist2d(pos.x, pos.z, b.group.position.x, b.group.position.z) < radius)
+      .sort((a, b2) => U.dist2d(pos.x, pos.z, a.group.position.x, a.group.position.z) -
+                       U.dist2d(pos.x, pos.z, b2.group.position.x, b2.group.position.z));
+    for (const b of sorted) {
+      if (responders >= 2 && Math.random() < 0.75) continue;
+      if (inDanger(pos.x, pos.z, 1)) { // heard it, not walking into the crater
+        b.lastKnown.set(pos.x + U.rand(-9, 9), 0, pos.z + U.rand(-9, 9));
+      } else {
         b.lastKnown.set(pos.x + U.rand(-3, 3), 0, pos.z + U.rand(-3, 3));
-        if (b.state !== 'investigate' || Math.random() < 0.3) { b.state = 'investigate'; b.stateT = 0; b.path = null; }
       }
+      if (b.state !== 'investigate' || Math.random() < 0.3) { b.state = 'investigate'; b.stateT = 0; b.path = null; }
+      responders++;
     }
   };
   M.aliveCount = function () {

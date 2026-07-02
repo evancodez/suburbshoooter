@@ -67,8 +67,14 @@
   const keys = {};
   let pointerLocked = false;
   const cv = renderer.domElement;
+  let lastWTap = -9, sprintLatch = false;
   document.addEventListener('keydown', (e) => {
     if (e.repeat) return;
+    if (e.code === 'KeyW') { // double-tap W = sprint (held for as long as W is)
+      const now = performance.now() / 1000;
+      if (now - lastWTap < 0.3) sprintLatch = true;
+      lastWTap = now;
+    }
     keys[e.code] = true;
     if (game.state !== 'playing' || !player.alive) return;
     if (e.code === 'KeyR') G.arsenal.reload();
@@ -80,7 +86,10 @@
     if (e.code === 'Digit4') G.arsenal.switchTo('rl');
     if (e.code === 'Digit5') G.arsenal.callAirstrike();
   });
-  document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+  document.addEventListener('keyup', (e) => {
+    keys[e.code] = false;
+    if (e.code === 'KeyW') sprintLatch = false;
+  });
   document.addEventListener('mousedown', (e) => {
     if (game.state !== 'playing' || game.paused) return; // paused: let the menu buttons take the click
     if (!pointerLocked) { lockPointer(); return; }
@@ -143,8 +152,8 @@
     player.spawnProtectT -= dt;
     if (!player.alive) return;
 
-    const sprintKey = keys.ShiftLeft || keys.ShiftRight;
-    const crouchKey = keys.KeyC || keys.ControlLeft;
+    const sprintKey = sprintLatch && keys.KeyW; // double-tap W, keep holding
+    const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft || keys.ShiftRight;
     const fwd = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     const str = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
 
