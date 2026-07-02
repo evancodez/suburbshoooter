@@ -693,13 +693,14 @@ G.world = (function () {
   };
 
   // ============ collision resolve (circle vs world) ============
-  W.collideCircle = function (pos, radius, feetY, height) {
+  W.collideCircle = function (pos, radius, feetY, height, stepLimit) {
+    const step = stepLimit || 0.42;
     for (let iter = 0; iter < 2; iter++) {
       // colliders
       for (let i = 0; i < colliders.length; i++) {
         const c = colliders[i];
         if (c.gone || c.noWalk) continue;
-        if (c.maxy - feetY <= 0.42) continue;      // step-up
+        if (c.maxy - feetY <= step) continue;       // step-up / clear while jumping
         if (c.miny > feetY + height) continue;      // overhead
         const nx = U.clamp(pos.x, c.minx, c.maxx);
         const nz = U.clamp(pos.z, c.minz, c.maxz);

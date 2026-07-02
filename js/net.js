@@ -300,42 +300,89 @@ G.net = (function () {
     });
   }
 
-  N.host = function (name, cb, errCb) {
+  function friendlyErr(e) {
+    const t = e && e.type;
+    if (t === 'peer-unavailable') return 'game not found — check the code, and make sure the host keeps the lobby open';
+    if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed')
+      return "can't reach the matchmaking server — check your internet (some school/work networks block it)";
+    if (t === 'browser-incompatible') return "this browser doesn't support WebRTC — try Chrome/Firefox/Safari";
+    return 'connection error: ' + (t || e);
+  }
+  function wirePeerBasics(p) {
+    // dropped the signaling server (laptop slept, network blip): reconnect so
+    // late joiners can still find us; live WebRTC connections are unaffected
+    p.on('disconnected', () => {
+      if (peer === p && !p.destroyed) { try { p.reconnect(); } catch (e) {} }
+    });
+  }
+
+  N.host = function (name, cb, errCb, statusCb) {
     N.myName = name;
-    N.code = shortCode();
-    peer = new Peer(PREFIX + N.code);
-    peer.on('open', (id) => {
-      N.isHost = true;
-      N.myId = id;
-      N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal' } };
-      N.myTeam = 0;
-      cb && cb();
-    });
-    peer.on('connection', (conn) => {
-      conns.push(conn);
-      wireConn(conn);
-    });
-    peer.on('error', (e) => { console.error('peer', e); errCb && errCb(String(e.type || e)); });
+    let idTries = 0;
+    const attempt = () => {
+      N.code = shortCode();
+      peer = new Peer(PREFIX + N.code);
+      wirePeerBasics(peer);
+      peer.on('open', (id) => {
+        N.isHost = true;
+        N.myId = id;
+        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal' } };
+        N.myTeam = 0;
+        cb && cb();
+      });
+      peer.on('connection', (conn) => {
+        conns.push(conn);
+        wireConn(conn);
+      });
+      peer.on('error', (e) => {
+        if (e.type === 'unavailable-id' && idTries++ < 3) { // code collision: reroll
+          try { peer.destroy(); } catch (err) {}
+          attempt();
+          return;
+        }
+        console.error('peer', e);
+        errCb && errCb(friendlyErr(e));
+      });
+    };
+    statusCb && statusCb('contacting server…');
+    attempt();
   };
 
-  N.join = function (code, name, cb, errCb) {
+  N.join = function (code, name, cb, errCb, statusCb) {
     N.myName = name;
     N.code = code;
+    let done = false;
+    const finish = (err) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (err) {
+        try { if (peer) peer.destroy(); } catch (e) {}
+        peer = null; hostConn = null;
+        errCb && errCb(err);
+      } else cb && cb();
+    };
+    // without this a failed WebRTC handshake spins on "connecting…" forever
+    const timer = setTimeout(() => {
+      finish(hostConn
+        ? 'found the game but the connection stalled — both of you refresh and retry; if it keeps happening a firewall is blocking WebRTC'
+        : "can't reach the matchmaking server — check your internet");
+    }, 15000);
+    statusCb && statusCb('contacting server…');
     peer = new Peer();
+    wirePeerBasics(peer);
     peer.on('open', (id) => {
       N.myId = id;
+      statusCb && statusCb('connecting to host…');
       hostConn = peer.connect(PREFIX + code, { reliable: true });
       hostConn.on('open', () => {
         wireConn(hostConn);
         hostConn.send({ t: 'hello', name, pid: id });
-        cb && cb();
+        finish();
       });
-      hostConn.on('error', (e) => errCb && errCb(String(e)));
+      hostConn.on('error', (e) => finish(friendlyErr(e)));
     });
-    peer.on('error', (e) => {
-      console.error('peer', e);
-      errCb && errCb(e.type === 'peer-unavailable' ? 'game not found — check the link/code' : String(e.type || e));
-    });
+    peer.on('error', (e) => { console.error('peer', e); finish(friendlyErr(e)); });
   };
 
   N.leave = function () {

@@ -183,7 +183,9 @@
     player.pos.x += player.vel.x * dt;
     player.pos.z += player.vel.z * dt;
     const h = player.crouching ? 1.2 : 1.75;
-    G.world.collideCircle(player.pos, 0.38, player.pos.y, h);
+    // airborne: raise the step limit so mid-jump you can drift over car
+    // hoods/props and land on top instead of being shoved off sideways
+    G.world.collideCircle(player.pos, 0.38, player.pos.y, h, player.onGround ? 0.42 : 0.95);
     player.pos.x = U.clamp(player.pos.x, -70, 70);
     player.pos.z = U.clamp(player.pos.z, -56, 56);
 
@@ -886,21 +888,26 @@
     $('mpStatus').textContent = msg;
     $('mpStatus').style.color = '#e83333';
   }
+  function netStatus(s) {
+    $('mpStatus').textContent = s;
+    $('mpStatus').style.color = '#555';
+  }
   $('hostBtn').addEventListener('click', () => {
     if (typeof Peer === 'undefined') { netError('peerjs.min.js missing'); return; }
-    $('mpStatus').textContent = 'creating game…';
-    $('mpStatus').style.color = '#555';
-    G.net.host(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
+    netStatus('creating game…');
+    G.net.host(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
   });
+  function doJoin(code) {
+    netStatus('connecting…');
+    G.net.join(code.toLowerCase(), playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
+  }
   $('joinBtn').addEventListener('click', () => {
     if (typeof Peer === 'undefined') { netError('peerjs.min.js missing'); return; }
     let code = ($('joinInput').value || '').trim();
     const m = code.match(/join=([a-z0-9]+)/i);
     if (m) code = m[1];
     if (!code) { netError('paste a game link or code'); return; }
-    $('mpStatus').textContent = 'connecting…';
-    $('mpStatus').style.color = '#555';
-    G.net.join(code.toLowerCase(), playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
+    doJoin(code);
   });
   if (G.net) {
     G.net.onLobby = renderLobby;
@@ -917,12 +924,12 @@
       $('menu').style.display = 'flex';
     };
   }
-  // shared link auto-fill
+  // shared link: join automatically — no button press needed
   const joinParam = new URLSearchParams(location.search).get('join');
   if (joinParam) {
     $('joinInput').value = joinParam;
-    $('mpStatus').textContent = 'link detected — enter a name and hit JOIN';
-    $('mpStatus').style.color = '#2c9e33';
+    if (typeof Peer !== 'undefined') doJoin(joinParam);
+    else netError('peerjs.min.js missing');
   }
 
   // ---------- auto quality ----------
