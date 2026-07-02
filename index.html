@@ -155,7 +155,14 @@
     display: none; flex-direction: column; align-items: center; justify-content: center;
     gap: 14px;
   }
-  #menu { background: rgba(60, 130, 200, 0.25); }
+  /* menu can outgrow short windows — scroll instead of clipping the DEPLOY button */
+  #menu {
+    background: rgba(60, 130, 200, 0.25);
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding: 18px 0 46px;
+  }
+  #menu .title { font-size: 58px; }
   #pause, #death, #end { background: rgba(20, 25, 35, 0.45); }
   .title {
     font-size: 74px; font-weight: bold; color: #fff;
@@ -297,6 +304,7 @@
 <div id="menu" class="screen">
   <div class="title">BLOCK OPS</div>
   <div class="subtitle">~ suburban warfare ~</div>
+  <button class="bigbtn" id="deployBtn">DEPLOY</button>
   <div class="panel">
     <h3>MAP</h3>
     <div class="btnrow" id="mapSel">
@@ -340,11 +348,11 @@
       <div><b>G</b> grenade</div>
       <div><b>F</b> knife</div>
       <div><b>5</b> airstrike (5 streak)</div>
+      <div><b>SPACE</b> at a ladder: climb</div>
       <div><b>ESC</b> pause</div>
     </div>
   </div>
-  <button class="bigbtn" id="deployBtn">DEPLOY</button>
-  <div class="tip">first to 30 kills wins. everything is destructible. property damage is encouraged.</div>
+  <div class="tip">everything is destructible. property damage is encouraged.</div>
 </div>
 
 <div id="lobby" class="screen">

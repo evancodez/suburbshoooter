@@ -82,7 +82,7 @@
   });
   document.addEventListener('keyup', (e) => { keys[e.code] = false; });
   document.addEventListener('mousedown', (e) => {
-    if (game.state !== 'playing') return;
+    if (game.state !== 'playing' || game.paused) return; // paused: let the menu buttons take the click
     if (!pointerLocked) { lockPointer(); return; }
     if (e.button === 0) G.arsenal.fireDown();
     if (e.button === 2) G.arsenal.adsDown();
@@ -226,6 +226,13 @@
       if (player.pos.y > floorY + 0.05) {
         player.onGround = false; // walked off ledge
       } else player.pos.y = floorY;
+    }
+    // bonk: jumping under a floor/ceiling stops the jump instead of clipping
+    const ceilY = G.world.ceilingAt(player.pos.x, player.pos.z, player.pos.y, 0.3);
+    const headroom = player.crouching ? 1.35 : 1.88;
+    if (ceilY > floorY + headroom && player.pos.y + headroom > ceilY) {
+      player.pos.y = ceilY - headroom;
+      if (player.vel.y > 0) player.vel.y = 0;
     }
     // standing in lava is exactly as bad as it sounds
     player.lavaAcc = (player.lavaAcc || 0) - dt;

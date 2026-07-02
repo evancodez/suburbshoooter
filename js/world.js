@@ -15,10 +15,10 @@ G.world = (function () {
     picnic: 400, swing: 130,
     // construction site
     chainlink: 25, plank: 30, block: 45, barrel: 70, pallet: 90, spool: 120, generator: 800, barrier: 120,
-    crate: 45, paint: 30, tool: 350, barrow: 260,
+    crate: 45, paint: 30, tool: 350, barrow: 260, watertank: 9000, silo: 6500,
     // volcano island
     bamboo: 60, thatch: 40, canoe: 700, chest: 5000, surfboard: 350, torch: 25, drum: 90,
-    tiki: 1500, melon: 15,
+    tiki: 1500, melon: 15, moai: 8000, stone: 400,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -436,6 +436,20 @@ G.world = (function () {
   // hedges (soft, visual leaf fx only)
   const hedges = [];
 
+  // lowest collider bottom above (roughly) head-grab height — jumps bonk on it
+  // instead of the old behavior of overhead boxes shoving you out sideways
+  W.ceilingAt = function (x, z, feetY, radius) {
+    radius = radius || 0.3;
+    let best = Infinity;
+    for (let i = 0; i < colliders.length; i++) {
+      const c = colliders[i];
+      if (c.gone || c.noWalk) continue;
+      if (c.miny < feetY + 1.0 || c.miny >= best) continue;
+      if (x > c.minx - radius && x < c.maxx + radius && z > c.minz - radius && z < c.maxz + radius) best = c.miny;
+    }
+    return best;
+  };
+
   // ============ map mechanics: ladders / lava / geysers ============
   const ladders = []; // {minx,minz,maxx,maxz, topY, baseY}
   W.ladderAt = function (x, z, feetY) {
@@ -827,8 +841,8 @@ G.world = (function () {
       for (let i = 0; i < colliders.length; i++) {
         const c = colliders[i];
         if (c.gone || c.noWalk) continue;
-        if (c.maxy - feetY <= step) continue;       // step-up / clear while jumping
-        if (c.miny > feetY + height) continue;      // overhead
+        if (c.maxy - feetY <= step) continue;        // step-up / clear while jumping
+        if (c.miny > feetY + 1.25) continue;         // overhead: that's a ceiling (ceilingAt), not a wall
         const nx = U.clamp(pos.x, c.minx, c.maxx);
         const nz = U.clamp(pos.z, c.minz, c.maxz);
         const dx = pos.x - nx, dz = pos.z - nz;
@@ -1039,6 +1053,19 @@ G.world = (function () {
     } else if (prop.kind === 'barrel' || prop.kind === 'drum') {
       tmpV.set(prop.x, prop.y, prop.z);
       W.explode(tmpV, 5.8, 125, { attacker, tag: 'BARREL' });
+    } else if (prop.kind === 'watertank') {
+      // burst main: a short monsoon
+      G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 70, kind: 'water', dur: 2.6 });
+      G.fx.decal('pool', prop.x, 0.03, prop.z, null, 3.4, new THREE.Color(0.45, 0.68, 1));
+      G.fx.shake(0.5, 0.4);
+      if (G.game) G.game.chat('HOA_Enforcer', 'THE WATER TOWER?? that serves three counties');
+    } else if (prop.kind === 'silo') {
+      // cement dust-out
+      G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y * 0.5, prop.z), rate: 55, kind: 'smoke', dur: 1.8 });
+      G.fx.shake(0.6, 0.4);
+    } else if (prop.kind === 'moai') {
+      G.fx.shake(0.8, 0.6);
+      if (G.game) G.game.chat('HOA_Enforcer', 'that statue was load-bearing, culturally');
     } else if (prop.kind === 'chest' && G.game) {
       G.game.chat('HOA_Enforcer', 'the pirate treasure!! think of the property value');
     } else if (prop.kind === 'hydrant') {
@@ -1828,49 +1855,50 @@ G.world = (function () {
     addCollider(-48, 0, 35.4, 48, 6, 38, { noShoot: true });
 
     // ---- THE TOWER: 3-deck steel skeleton, stairs + ladders + scaffold ----
+    // deck spacing 3.7m: enough to sprint AND jump between floors without bonking
     buildPlatform(18, 0, 20.4, 18.4, 0.3, 0.3);                    // ground slab
     for (const cx2 of [9.2, 18, 26.8])
-      for (const cz2 of [-8.2, 0, 8.2]) buildPost(cx2, cz2, 6.6, 0.55, 0, steelGeos);
-    buildPlatform(18, 0, 20.4, 18.4, 3.3, 0.35);                   // deck 2
+      for (const cz2 of [-8.2, 0, 8.2]) buildPost(cx2, cz2, 7.4, 0.55, 0, steelGeos);
+    buildPlatform(18, 0, 20.4, 18.4, 4.0, 0.35);                   // deck 2
     // deck 3 in two pieces, leaving a stairwell hole over the NE corner
-    buildPlatform(18, 1.3, 20.4, 15.8, 6.3, 0.35);
-    buildPlatform(14.3, -7.9, 13, 2.6, 6.3, 0.35);
+    buildPlatform(18, 1.3, 20.4, 15.8, 7.7, 0.35);
+    buildPlatform(14.65, -7.9, 13.7, 2.6, 7.7, 0.35); // meets the top stair, no gap
     // big south stairs up to deck 2 + landing
-    buildStairs(12, 14.6, 0, -1, 2.4, 10, 0.33, 0.5);
-    buildPlatform(12, 9.7, 2.6, 1.8, 3.3, 0.3);
+    buildStairs(12, 14.6, 0, -1, 2.4, 10, 0.4, 0.5);
+    buildPlatform(12, 9.7, 2.6, 1.8, 4.0, 0.3);
     // interior stairs deck 2 → deck 3 through the stairwell hole
-    buildStairs(26, -7.6, -1, 0, 1.6, 9, 0.34, 0.52, 3.3);
+    buildStairs(26.2, -7.6, -1, 0, 1.6, 10, 0.37, 0.5, 4.0);
     // ladders: ground → deck 2 (north + west faces), deck 2 → deck 3 (inside east edge)
-    addLadder(22, -8.9, 0, 3.3, 'n');
-    addLadder(7.75, 5, 0, 3.3, 'w');
-    addLadder(27.6, 3, 3.3, 6.3, 'w');
+    addLadder(22, -8.9, 0, 4.0, 'n');
+    addLadder(7.75, 5, 0, 4.0, 'w');
+    addLadder(27.6, 3, 4.0, 7.7, 'w');
     // deck 2 plywood partition rooms (doorways to weave through)
-    const part1 = WallGrid({ ox: 14.5, oy: 3.65, oz: -8.6, dir: 'z', cols: 12, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
+    const part1 = WallGrid({ ox: 14.5, oy: 4.0, oz: -8.6, dir: 'z', cols: 12, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
     wallFill(part1, (c, r) => (c >= 4 && c <= 5) || c >= 10 ? 1 : 0);
-    const part2 = WallGrid({ ox: 14.5, oy: 3.65, oz: 2, dir: 'x', cols: 10, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
+    const part2 = WallGrid({ ox: 14.5, oy: 4.0, oz: 2, dir: 'x', cols: 10, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfa268, hp: 16, house: null });
     wallFill(part2, (c, r) => (c >= 3 && c <= 4) ? 1 : (c === 8 && r === 1) ? 1 : 0);
     // deck 3 rooftop shack (SW corner): two plank walls + a scrap roof
-    const sh1 = WallGrid({ ox: 9, oy: 6.65, oz: 3.2, dir: 'x', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
+    const sh1 = WallGrid({ ox: 9, oy: 7.7, oz: 3.2, dir: 'x', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
     wallFill(sh1, (c) => c === 4 ? 1 : 0);
-    const sh2 = WallGrid({ ox: 14, oy: 6.65, oz: 3.2, dir: 'z', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
+    const sh2 = WallGrid({ ox: 14, oy: 7.7, oz: 3.2, dir: 'z', cols: 5, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xc9975a, hp: 16, house: null });
     wallFill(sh2, (c) => c === 1 ? 1 : 0);
     const shRoof = Sheet('plank', 0xb98a4f);
     for (let c = 0; c < 6; c++)
       for (let j = 0; j < 6; j++)
-        sheetAdd(shRoof, 8.7 + c + 0.5, 8.35 + j * 0.06, 3 + j + 0.5, 0.06, 'x', 1.04, 0.1, 1.05, 18);
+        sheetAdd(shRoof, 8.7 + c + 0.5, 9.4 + j * 0.06, 3 + j + 0.5, 0.06, 'x', 1.04, 0.1, 1.05, 18);
     // deck 2 plywood windbreak (north) + guardrail (south, gap at the stairs)
-    const wb = WallGrid({ ox: 8, oy: 3.65, oz: -9.05, dir: 'x', cols: 20, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    const wb = WallGrid({ ox: 8, oy: 4.0, oz: -9.05, dir: 'x', cols: 20, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
     wallFill(wb, (c, r) => (c >= 8 && c <= 11) ? 1 : ((c === 3 || c === 16) && r === 1) ? 1 : 0);
-    const gr = WallGrid({ ox: 8, oy: 3.65, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.85, th: 0.1, kind: 'plank', tint: 0xc9a05f, hp: 14, house: null });
+    const gr = WallGrid({ ox: 8, oy: 4.0, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.85, th: 0.1, kind: 'plank', tint: 0xc9a05f, hp: 14, house: null });
     wallFill(gr, (c) => (c >= 2 && c <= 5) ? 1 : 0);
     // deck 3 cinder parapet (gaps at ladder crest + corners)
-    const pN = WallGrid({ ox: 8, oy: 6.65, oz: -9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    const pN = WallGrid({ ox: 8, oy: 7.7, oz: -9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
     wallFill(pN, (c) => (c >= 9 && c <= 10) || c >= 13 ? 1 : 0); // open over the stairwell
-    const pS = WallGrid({ ox: 8, oy: 6.65, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    const pS = WallGrid({ ox: 8, oy: 7.7, oz: 9.05, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
     wallFill(pS, (c) => (c >= 4 && c <= 5) ? 1 : 0);
-    const pW = WallGrid({ ox: 8.05, oy: 6.65, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    const pW = WallGrid({ ox: 8.05, oy: 7.7, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
     wallFill(pW, (c) => (c >= 8 && c <= 9) ? 1 : 0);
-    const pE = WallGrid({ ox: 27.95, oy: 6.65, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
+    const pE = WallGrid({ ox: 27.95, oy: 7.7, oz: -9, dir: 'z', cols: 18, rows: 1, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 42, house: null });
     wallFill(pE, (c) => (c >= 8 && c <= 10) ? 1 : 0);
     // deck 1 cinder cover walls
     const c1 = WallGrid({ ox: 11, oy: 0.3, oz: -3, dir: 'x', cols: 6, rows: 2, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 45, house: null });
@@ -1878,19 +1906,20 @@ G.world = (function () {
     const c2 = WallGrid({ ox: 23, oy: 0.3, oz: -3, dir: 'z', cols: 6, rows: 2, cw: 1, ch: 0.62, th: 0.24, kind: 'block', tint: 0xcfd2d4, hp: 45, house: null });
     wallFill(c2, () => 0);
     // deck loot cover
-    addProp('barrel', 26, 3.65, -6, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
-    addProp('lumber', 10.5, 3.65, -5.5, 2.3, 0.55, 1.1, T.plain, 0xc9a05f, 30, {});
+    addProp('barrel', 26, 4.0, -6, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('lumber', 10.5, 4.0, -5.5, 2.3, 0.55, 1.1, T.plain, 0xc9a05f, 30, {});
 
     // ---- scaffold along the tower's south face (jump the gap to deck 2) ----
-    buildPlatform(16, 11.8, 16, 1.8, 2.2, 0.14);
-    buildPlatform(16, 11.8, 16, 1.8, 4.4, 0.14);
+    // pushed south so its boards never hang over the big stairs
+    buildPlatform(16, 12.4, 16, 1.8, 2.3, 0.14);
+    buildPlatform(16, 12.4, 16, 1.8, 5.3, 0.14);   // 3m between boards: full jumps fit
     for (const px of [8.2, 12, 16, 20, 23.8]) {
-      buildPost(px, 11.0, 4.8, 0.14, 0, steelGeos);
-      buildPost(px, 12.6, 4.8, 0.14, 0, steelGeos);
+      buildPost(px, 11.6, 5.6, 0.14, 0, steelGeos);
+      buildPost(px, 13.2, 5.6, 0.14, 0, steelGeos);
     }
-    addLadder(23.4, 12.85, 0, 2.2, 's');
-    addLadder(8.6, 12.85, 2.2, 4.4, 's');
-    const sg2 = WallGrid({ ox: 8, oy: 4.55, oz: 12.75, dir: 'x', cols: 16, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    addLadder(23.4, 13.45, 0, 2.3, 's');
+    addLadder(8.6, 13.45, 2.3, 5.3, 's');
+    const sg2 = WallGrid({ ox: 8, oy: 5.3, oz: 13.35, dir: 'x', cols: 16, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
     wallFill(sg2, (c) => (c <= 1 || c >= 14) ? 1 : 0);
 
     // ---- tower crane: long ladder, jib catwalk, hanging pallet drop ----
@@ -1909,31 +1938,32 @@ G.world = (function () {
     // ---- the warehouse: big interior, mezzanine, pallet racks ----
     plane(20, 16, T.driveway(), -28, 0.024, -18).material.map.repeat.set(6, 5);
     const wW = (o, dir, cols, fn) => {
-      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 6, cw: 1, ch: 0.72, th: 0.28, kind: 'block', tint: 0xd8d2c4, hp: 50, house: null });
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 8, cw: 1, ch: 0.72, th: 0.28, kind: 'block', tint: 0xd8d2c4, hp: 50, house: null });
       wallFill(wl, fn);
     };
     // south wall: roll-up door gap + windows
     wW({ ox: -38, oz: -10 }, 'x', 20, (c, r) =>
-      (c >= 8 && c <= 11 && r <= 3) ? 1 : ((c >= 2 && c <= 3) || (c >= 16 && c <= 17)) && (r === 2 || r === 3) ? 3 : 0);
+      (c >= 8 && c <= 11 && r <= 3) ? 1 : ((c >= 2 && c <= 3) || (c >= 16 && c <= 17)) && (r === 3 || r === 4) ? 3 : 0);
     // north wall: man-door + high windows
     wW({ ox: -38, oz: -26 }, 'x', 20, (c, r) =>
-      (c === 3 || c === 4) && r <= 2 ? 1 : (c >= 8 && c <= 15) && (r === 3 || r === 4) ? 3 : 0);
+      (c === 3 || c === 4) && r <= 3 ? 1 : (c >= 8 && c <= 15) && (r === 5 || r === 6) ? 3 : 0);
     // west wall: windows
-    wW({ ox: -38, oz: -26 }, 'z', 16, (c, r) => ((c >= 3 && c <= 4) || (c >= 10 && c <= 11)) && (r === 2 || r === 3) ? 3 : 0);
+    wW({ ox: -38, oz: -26 }, 'z', 16, (c, r) => ((c >= 3 && c <= 4) || (c >= 10 && c <= 11)) && (r === 3 || r === 4) ? 3 : 0);
     // east wall: second big door
-    wW({ ox: -18, oz: -26 }, 'z', 16, (c, r) => (c >= 6 && c <= 8 && r <= 3) ? 1 : (c >= 12 && c <= 13) && (r === 2 || r === 3) ? 3 : 0);
-    // mezzanine along the north half + two ways up
-    buildPlatform(-28, -22.6, 18.4, 6, 2.6, 0.2);
-    buildStairs(-20.6, -18.4, 0, -1, 1.8, 8, 0.33, 0.5);           // stairs at the east end
-    addLadder(-36, -19.55, 0, 2.6, 's');                           // ladder at the west end
+    wW({ ox: -18, oz: -26 }, 'z', 16, (c, r) => (c >= 6 && c <= 8 && r <= 3) ? 1 : (c >= 12 && c <= 13) && (r === 3 || r === 4) ? 3 : 0);
+    // mezzanine along the north half + two ways up (stairs approach from the
+    // open floor so nothing hangs over your head on the way up)
+    buildPlatform(-28, -22.6, 18.4, 6, 2.8, 0.2);
+    buildStairs(-20.6, -16.2, 0, -1, 1.8, 8, 0.36, 0.48);
+    addLadder(-36, -19.55, 0, 2.8, 's');                           // ladder at the west end
     // mezzanine guardrail (destructible, gaps at stairs + ladder)
-    const mzr = WallGrid({ ox: -37, oy: 2.9, oz: -19.7, dir: 'x', cols: 18, rows: 1, cw: 1, ch: 0.75, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    const mzr = WallGrid({ ox: -37, oy: 2.8, oz: -19.7, dir: 'x', cols: 18, rows: 1, cw: 1, ch: 0.75, th: 0.1, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
     wallFill(mzr, (c) => (c >= 15 || c <= 1) ? 1 : 0);
     // plywood roof over the mezzanine only — the south half is open sky
     const wRoof = Sheet('plank', 0xc9a05f);
     for (let c = 0; c < 19; c++)
       for (let j = 0; j < 6; j++)
-        sheetAdd(wRoof, -37.5 + c + 0.5, 4.45 + j * 0.05, -25.7 + j + 0.5, 0.05, 'x', 1.04, 0.12, 1.05, 18);
+        sheetAdd(wRoof, -37.5 + c + 0.5, 5.95 + j * 0.04, -25.7 + j + 0.5, 0.04, 'x', 1.04, 0.12, 1.05, 18);
     // pallet racks on the open floor: two aisles, climbable shelves with loot
     for (const rx of [-33.5, -25.5]) {
       buildPlatform(rx, -13.4, 6, 1.5, 1.25, 0.12);
@@ -2060,6 +2090,19 @@ G.world = (function () {
       (() => { const g = U.shadedBoxGeo(0.7, 0.4, 0.4); g.translate(lx, 5.6, lz); steelGeos.push(g); })();
     }
 
+    // ---- WATER TOWER: shoot the tank, get a monsoon (and a sniper deck) ----
+    for (const [wtx, wtz] of [[-35, -3], [-33, -3], [-35, -1], [-33, -1]])
+      buildPost(wtx, wtz, 4.2, 0.26, 0, steelGeos);
+    buildPlatform(-34, -2, 3.8, 3.8, 4.2, 0.18);
+    addLadder(-34, -0.05, 0, 4.2, 's');
+    addProp('watertank', -34, 4.25, -2, 2.5, 2.4, 2.5, T.container, 0x6aa7d8, 260, { metal: true });
+    // ---- cement silos: two very large, very poppable landmarks ----
+    addProp('silo', -13.5, 0, 8.5, 2.4, 6.5, 2.4, T.container, 0xdad8d2, 220, { metal: true });
+    addProp('silo', -13.5, 0, 12.5, 2.4, 6.5, 2.4, T.container, 0xcac8c2, 220, { metal: true });
+    // ---- long half-built block wall (big shreddable cover mid-map) ----
+    const lbw = WallGrid({ ox: -16, oy: 0, oz: 15, dir: 'x', cols: 14, rows: 3, cw: 1, ch: 0.62, th: 0.26, kind: 'block', tint: 0xd0cabb, hp: 45, house: null });
+    wallFill(lbw, (c, r) => (c === 4 || c === 5) && r <= 2 ? 1 : (c >= 9 && c <= 10) && r === 2 ? 1 : (c === 13 && r === 2) ? 1 : 0);
+
     W.spawnPoints = [
       { x: -40, z: 0 }, { x: 40, z: 0 }, { x: -40, z: -28 }, { x: -40, z: 28 },
       { x: 40, z: -28 }, { x: 40, z: 28 }, { x: 0, z: -32 }, { x: 0, z: 32 },
@@ -2166,32 +2209,39 @@ G.world = (function () {
     }
 
     // ---- bamboo huts with thatch roofs ----
-    function buildHut(cx, cz) {
-      const hw = 5, hd = 4, ch = 0.72;
+    function buildHut(cx, cz, baseY) {
+      baseY = baseY || 0;
+      const hw = 5, hd = 4, ch = 0.72, rows = 4; // 2.9m walls: jump inside all you want
       const mkW = (o, dir, cols, fn) => {
-        const wl = WallGrid({ ...o, oy: 0, dir, cols, rows: 3, cw: 1, ch, th: 0.16, kind: 'bamboo', tint: 0xcdb968, hp: 26, house: null });
+        const wl = WallGrid({ ...o, oy: baseY, dir, cols, rows, cw: 1, ch, th: 0.16, kind: 'bamboo', tint: 0xcdb968, hp: 26, house: null });
         wallFill(wl, fn);
       };
-      mkW({ ox: cx - hw / 2, oz: cz + hd / 2 }, 'x', hw, (c, r) => c === 2 && r <= 2 ? 1 : 0); // south door
-      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'x', hw, (c, r) => (c === 1 || c === 3) && r === 1 ? 1 : 0);
-      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 1 && r === 1 ? 1 : 0);
-      mkW({ ox: cx + hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 2 && r === 1 ? 1 : 0);
+      mkW({ ox: cx - hw / 2, oz: cz + hd / 2 }, 'x', hw, (c, r) => c === 2 && r <= 3 ? 1 : 0); // tall south door
+      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'x', hw, (c, r) => (c === 1 || c === 3) && (r === 1 || r === 2) ? 1 : 0);
+      mkW({ ox: cx - hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 1 && (r === 1 || r === 2) ? 1 : 0);
+      mkW({ ox: cx + hw / 2, oz: cz - hd / 2 }, 'z', hd, (c, r) => c === 2 && (r === 1 || r === 2) ? 1 : 0);
       const roof = Sheet('thatch', 0xd6a852);
-      const ridgeY = 3 * ch + 1.15;
+      const ridgeY = baseY + rows * ch + 1.15;
       for (let sgn = -1; sgn <= 1; sgn += 2)
         for (let c = 0; c < hw + 2; c++)
           for (let j = 0; j < 3; j++) {
             const t = (j + 0.5) / 3;
             sheetAdd(roof, cx - hw / 2 - 1 + c + 0.5, ridgeY - t * 1.15, cz + sgn * t * (hd / 2 + 0.6), sgn * 0.46, 'x', 1.05, 0.14, 1.0, 24);
           }
-      addProp('table', cx + 1, 0, cz - 0.6, 1.4, 0.72, 1.0, T.plain, 0xb98a55, 40, {});
+      addProp('table', cx + 1, baseY, cz - 0.6, 1.4, 0.72, 1.0, T.plain, 0xb98a55, 40, {});
       W.campSpots.push({ x: cx, z: cz, yaw: 0 });
       torchPts.push([cx - 1.4, cz + hd / 2 + 0.7], [cx + 1.4, cz + hd / 2 + 0.7]);
     }
     const torchPts = [];
     buildHut(-26, -20);
     buildHut(-32, 8);
-    buildHut(22, 26);
+    // ---- stilt longhouse (east): a whole hut on legs, ladder up, shade below ----
+    for (const [lx2, lz2] of [[19.6, 24.1], [24.4, 24.1], [19.6, 27.9], [24.4, 27.9], [22, 24.1], [22, 27.9]])
+      buildPost(lx2, lz2, 2.75, 0.22);
+    buildPlatform(22, 26, 7, 5, 2.6, 0.22);
+    buildHut(22, 26, 2.6);
+    addLadder(22, 28.6, 0, 2.6, 's');
+    addProp('drum', 24.6, 0, 24.6, 0.7, 1.0, 0.7, T.propane, 0x3f8f5f, 20, { metal: true }); // under the house
     // beach bar: open-air thatch pavilion
     buildPlatform(-8, 29, 6.5, 4.5, 0.25, 0.25);
     for (const [px3, pz3] of [[-10.8, 27.2], [-5.2, 27.2], [-10.8, 30.8], [-5.2, 30.8]]) buildPost(px3, pz3, 3.1, 0.17);
@@ -2228,7 +2278,7 @@ G.world = (function () {
     addProp('drum', -14, 0, 30.5, 0.7, 1.0, 0.7, T.propane, 0x3f8f5f, 20, { metal: true }); // bar fuel drum
 
     // ---- watchtower overlooking the bridge ----
-    for (const [wx2, wz2] of [[-3.1, 0.9], [-0.9, 0.9], [-3.1, 3.1], [-0.9, 3.1]]) buildPost(wx2, wz2, 2.9, 0.17);
+    for (const [wx2, wz2] of [[-3.1, 0.9], [-0.9, 0.9], [-3.1, 3.1], [-0.9, 3.1]]) buildPost(wx2, wz2, 5.5, 0.17);
     buildPlatform(-2, 2, 2.9, 2.9, 2.7, 0.16);
     addLadder(-2, 3.6, 0, 2.7, 's');
     const wtw = WallGrid({ ox: -3.4, oy: 2.75, oz: 0.55, dir: 'x', cols: 3, rows: 1, cw: 1, ch: 0.6, th: 0.14, kind: 'bamboo', tint: 0xcdb968, hp: 22, house: null });
@@ -2238,8 +2288,30 @@ G.world = (function () {
     const wtRoof = Sheet('thatch', 0xd6a852);
     for (let c = 0; c < 4; c++)
       for (let j = 0; j < 4; j++)
-        sheetAdd(wtRoof, -3.9 + c + 0.5, 4.7 + (j - 1.5) * 0.14, 0.1 + j + 0.5, 0.14, 'x', 1.05, 0.12, 1.05, 18);
+        sheetAdd(wtRoof, -3.9 + c + 0.5, 5.75 + (j - 1.5) * 0.14, 0.1 + j + 0.5, 0.14, 'x', 1.05, 0.12, 1.05, 18);
     torchPts.push([-3.4, 4.2]);
+
+    // ---- GIANT MOAI on the east beach (worth a fortune in property damage) ----
+    addProp('moai', 31, 0, -8, 1.9, 3.6, 1.9, T.tiki, 0xa8a8b2, 240, {});
+    // ---- old stone shrine (ring of standing stones + chest) ----
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2 + 0.3;
+      addProp('stone', -22 + Math.cos(a) * 2.7, 0, -2 + Math.sin(a) * 2.7, 0.8, 2.0, 0.8, T.plain, 0x8a8890, 70, {});
+    }
+    addProp('stone', -18.6, 2.15, -2, 0.7, 0.5, 2.6, T.plain, 0x8a8890, 70, {}); // arch lintel
+    (() => { const g = U.shadedBoxGeo(0.65, 2.15, 0.65); g.translate(-18.6, 1.075, -3.1); rockGeos.push(g); })();
+    addCollider(-18.9, 0, -3.4, -18.3, 2.15, -2.8, {});
+    (() => { const g = U.shadedBoxGeo(0.65, 2.15, 0.65); g.translate(-18.6, 1.075, -0.9); rockGeos.push(g); })();
+    addCollider(-18.9, 0, -1.2, -18.3, 2.15, -0.6, {});
+    addProp('chest', -22, 0, -2, 0.95, 0.7, 0.65, T.plain, 0xb8862b, 25, {});
+    // ---- rickety pier off the east beach (planks give way underfoot) ----
+    buildStairs(33.4, 6, 1, 0, 2.0, 2, 0.28, 0.5);
+    for (const px6 of [35.1, 36.9, 38.7])
+      addProp('plank', px6, 0.5, 6, 1.8, 0.12, 1.9, T.plywood, 0xc9a05f, 22, { step: true });
+    buildPost(34.3, 5.0, 1.4, 0.13); buildPost(34.3, 7.0, 1.4, 0.13);
+    buildPost(37.8, 5.0, 1.4, 0.13); buildPost(37.8, 7.0, 1.4, 0.13);
+    addProp('drum', 39.2, 0.62, 6.4, 0.6, 0.9, 0.6, T.propane, 0xc23b2e, 18, { metal: true });
+    torchPts.push([33.6, 7.4]);
 
     // ---- shipwreck on the west shore ----
     const hullN = WallGrid({ ox: -34, oy: 0, oz: -13.2, dir: 'x', cols: 8, rows: 3, cw: 1, ch: 0.7, th: 0.16, kind: 'plank', tint: 0x8a5a3b, hp: 24, house: null });
@@ -2263,13 +2335,13 @@ G.world = (function () {
       addProp('tiki', tx5, ty, tz5, 1.0, 2.3, 1.0, T.tiki, 0xffffff, 60, {});
 
     // ---- fruit stall by the stepping stones ----
-    buildPost(21, 11.2, 2.3, 0.15); buildPost(23, 11.2, 2.3, 0.15);
+    buildPost(21, 11.2, 3.0, 0.15); buildPost(23, 11.2, 3.0, 0.15);
     const stall = WallGrid({ ox: 20.5, oy: 0, oz: 12.6, dir: 'x', cols: 3, rows: 1, cw: 1, ch: 0.95, th: 0.2, kind: 'bamboo', tint: 0xcdb968, hp: 22, house: null });
     wallFill(stall, () => 0);
     const stallRoof = Sheet('thatch', 0xd6a852);
     for (let c = 0; c < 4; c++)
       for (let j = 0; j < 3; j++)
-        sheetAdd(stallRoof, 19.9 + c + 0.6, 2.45 - j * 0.18, 10.9 + j + 0.5, 0.2, 'x', 1.06, 0.12, 1.06, 16);
+        sheetAdd(stallRoof, 19.9 + c + 0.6, 3.15 - j * 0.18, 10.9 + j + 0.5, 0.2, 'x', 1.06, 0.12, 1.06, 16);
     addProp('melon', 21.2, 0.95, 12.4, 0.45, 0.4, 0.45, T.plain, 0x3fae4f, 8, {});
     addProp('melon', 21.9, 0.95, 12.5, 0.45, 0.4, 0.45, T.plain, 0x5fc24f, 8, {});
     addProp('melon', 22.6, 0.95, 12.3, 0.45, 0.4, 0.45, T.plain, 0xe8b83e, 8, {});
