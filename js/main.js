@@ -831,6 +831,7 @@
     const isHost = N.isHost;
     $('lobbyCode').textContent = N.code;
     $('lobbyLink').value = N.link();
+    if (document.activeElement !== $('lobbyName')) $('lobbyName').value = N.myName;
     // players grouped by team
     let html = '';
     for (const team of [0, 1]) {
@@ -878,6 +879,18 @@
     $('copyLinkBtn').textContent = 'COPIED!';
     setTimeout(() => { $('copyLinkBtn').textContent = 'COPY'; }, 1200);
   });
+  let lobbyNameT = 0;
+  $('lobbyName').addEventListener('input', () => {
+    clearTimeout(lobbyNameT);
+    lobbyNameT = setTimeout(() => {
+      const n = ($('lobbyName').value || '').trim().slice(0, 14);
+      if (!n || !G.net) return;
+      G.net.setName(n);
+      settings.name = n;
+      saveSettings();
+      $('nameInput').value = n;
+    }, 500);
+  });
   $('lobbyStartBtn').addEventListener('click', () => { if (G.net) G.net.startMatch(); });
   $('lobbyLeaveBtn').addEventListener('click', () => {
     if (G.net) G.net.leave();
@@ -898,8 +911,12 @@
     G.net.host(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
   });
   function doJoin(code) {
+    // joiners may have no name yet — send '' and the host numbers them Guest1,
+    // Guest2, …; they can rename themselves from inside the lobby
+    let n = ($('nameInput').value || '').trim().slice(0, 14);
+    if (n) { settings.name = n; saveSettings(); }
     netStatus('connecting…');
-    G.net.join(code.toLowerCase(), playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
+    G.net.join(code.toLowerCase(), n, () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
   }
   $('joinBtn').addEventListener('click', () => {
     if (typeof Peer === 'undefined') { netError('peerjs.min.js missing'); return; }

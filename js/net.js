@@ -14,9 +14,23 @@ G.net = (function () {
     onLobby: null, onStart: null, onClosed: null, onJoinFail: null,
   };
   const PREFIX = 'blockops-v1-';
+  // PeerJS's default ICE list only has UDP TURN on :3478, which dies on
+  // firewalls that block UDP and home routers with client isolation — add
+  // relays reachable over TCP/443 so those networks can still connect
+  const PEER_OPTS = {
+    config: {
+      iceServers: [
+        { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
+        { urls: ['turn:eu-0.turn.peerjs.com:3478', 'turn:us-0.turn.peerjs.com:3478'], username: 'peerjs', credential: 'peerjsp' },
+        { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
+      ],
+      sdpSemantics: 'unified-plan',
+    },
+  };
   let peer = null;
   let conns = [];       // host: all client connections
   let hostConn = null;  // client: connection to host
+  let guestN = 0;       // host: counter for auto-assigned Guest names
   let stateAcc = 0, snapAcc = 0;
   const tmpV = new THREE.Vector3();
 
@@ -59,13 +73,24 @@ G.net = (function () {
     // create/update remote entities from lobby roster (all players except me)
     if (!N.lobby) return;
     for (const p of N.lobby.players) {
-      if (p.id === N.myId) { N.myTeam = p.team; if (G.player) G.player.team = p.team; continue; }
+      if (p.id === N.myId) {
+        N.myTeam = p.team;
+        N.myName = p.name; // host may have assigned Guest# or applied a rename
+        if (G.player) G.player.team = p.team;
+        continue;
+      }
       let rp = remoteById(p.id);
       if (!rp) {
         rp = RemotePlayer(p.id, p.name, p.team);
         N.remoteList.push(rp);
       }
       rp.team = p.team;
+      if (rp.name !== p.name) { // renamed in lobby: redraw the floating tag
+        rp.name = p.name;
+        rp.group.remove(rp.tag);
+        rp.tag = G.botMgr.makeNametag(p.name, (G.player && p.team === G.player.team) ? '#7dff7d' : '#ff5544');
+        rp.group.add(rp.tag);
+      }
     }
     // drop entities for players no longer present
     for (let i = N.remoteList.length - 1; i >= 0; i--) {
@@ -137,12 +162,23 @@ G.net = (function () {
       case 'hello': { // client introduced itself (host only)
         if (!N.isHost || N.active) { fromConn.send({ t: 'nope', why: N.active ? 'match in progress' : 'not hosting' }); return; }
         fromConn._pid = msg.pid;
-        fromConn._name = msg.name;
+        let nm = String(msg.name || '').trim().slice(0, 14);
+        if (!nm) nm = 'Guest' + (++guestN); // no name yet: number them in join order
+        fromConn._name = nm;
         // auto-balance team
         const a = N.lobby.players.filter(p => p.team === 0).length;
         const b = N.lobby.players.filter(p => p.team === 1).length;
-        N.lobby.players.push({ id: msg.pid, name: msg.name, team: a <= b ? 0 : 1, host: false });
+        N.lobby.players.push({ id: msg.pid, name: nm, team: a <= b ? 0 : 1, host: false });
         pushLobby();
+        break;
+      }
+      case 'name': { // client picked a name in the lobby
+        if (!N.isHost) break;
+        const nm = String(msg.name || '').trim().slice(0, 14);
+        if (!nm) break;
+        fromConn._name = nm;
+        const p = N.lobby && N.lobby.players.find(p => p.id === fromConn._pid);
+        if (p && p.name !== nm) { p.name = nm; pushLobby(); }
         break;
       }
       case 'lobby':
@@ -277,6 +313,15 @@ G.net = (function () {
     N.lobby.cfg[k] = v;
     pushLobby();
   };
+  N.setName = function (name) {
+    name = String(name || '').trim().slice(0, 14);
+    if (!name || name === N.myName) return;
+    N.myName = name;
+    if (N.isHost) {
+      const p = N.lobby && N.lobby.players.find(p => p.id === N.myId);
+      if (p) { p.name = name; pushLobby(); }
+    } else toHost({ t: 'name', name });
+  };
   N.link = function () {
     return location.origin + location.pathname + '?join=' + N.code;
   };
@@ -321,11 +366,12 @@ G.net = (function () {
     let idTries = 0;
     const attempt = () => {
       N.code = shortCode();
-      peer = new Peer(PREFIX + N.code);
+      peer = new Peer(PREFIX + N.code, PEER_OPTS);
       wirePeerBasics(peer);
       peer.on('open', (id) => {
         N.isHost = true;
         N.myId = id;
+        guestN = 0;
         N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal' } };
         N.myTeam = 0;
         cb && cb();
@@ -351,7 +397,7 @@ G.net = (function () {
   N.join = function (code, name, cb, errCb, statusCb) {
     N.myName = name;
     N.code = code;
-    let done = false;
+    let done = false, attempts = 0, timer = 0;
     const finish = (err) => {
       if (done) return;
       done = true;
@@ -362,25 +408,36 @@ G.net = (function () {
         errCb && errCb(err);
       } else cb && cb();
     };
-    // without this a failed WebRTC handshake spins on "connecting…" forever
-    const timer = setTimeout(() => {
-      finish(hostConn
-        ? 'found the game but the connection stalled — both of you refresh and retry; if it keeps happening a firewall is blocking WebRTC'
-        : "can't reach the matchmaking server — check your internet");
-    }, 15000);
+    // each attempt gets its own deadline — a failed WebRTC handshake would
+    // otherwise spin on "connecting…" forever with no event at all
+    const tryConnect = () => {
+      if (done) return;
+      attempts++;
+      statusCb && statusCb(attempts > 1 ? 'connection stalled, retrying (' + attempts + '/3)…' : 'connecting to host…');
+      const c = peer.connect(PREFIX + code, { reliable: true });
+      hostConn = c;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        try { c.close(); } catch (e) {}
+        if (attempts < 3) tryConnect();
+        else finish('found the game but the connection keeps stalling — usually a firewall/router blocking WebRTC on one side; try joining from a phone hotspot to confirm which network it is');
+      }, 8000);
+      c.on('open', () => {
+        if (done || hostConn !== c) return;
+        clearTimeout(timer);
+        wireConn(c);
+        c.send({ t: 'hello', name: N.myName, pid: N.myId });
+        finish();
+      });
+      c.on('error', (e) => { if (hostConn === c) finish(friendlyErr(e)); });
+    };
     statusCb && statusCb('contacting server…');
-    peer = new Peer();
+    timer = setTimeout(() => finish("can't reach the matchmaking server — check your internet"), 12000);
+    peer = new Peer(PEER_OPTS);
     wirePeerBasics(peer);
     peer.on('open', (id) => {
       N.myId = id;
-      statusCb && statusCb('connecting to host…');
-      hostConn = peer.connect(PREFIX + code, { reliable: true });
-      hostConn.on('open', () => {
-        wireConn(hostConn);
-        hostConn.send({ t: 'hello', name, pid: id });
-        finish();
-      });
-      hostConn.on('error', (e) => finish(friendlyErr(e)));
+      tryConnect();
     });
     peer.on('error', (e) => { console.error('peer', e); finish(friendlyErr(e)); });
   };
