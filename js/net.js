@@ -372,7 +372,7 @@ G.net = (function () {
         N.isHost = true;
         N.myId = id;
         guestN = 0;
-        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal' } };
+        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10 } };
         N.myTeam = 0;
         cb && cb();
       });
@@ -453,7 +453,9 @@ G.net = (function () {
     if (!N.isHost || !N.lobby) return;
     const cfg = {
       botsA: N.lobby.cfg.botsA, botsB: N.lobby.cfg.botsB,
-      diff: N.lobby.cfg.diff, target: 30, time: 600,
+      diff: N.lobby.cfg.diff,
+      target: N.lobby.cfg.target || 30,
+      time: (N.lobby.cfg.mins || 10) * 60,
     };
     const roster = G.botMgr.rosterFor([cfg.botsA, cfg.botsB]);
     N.active = true;

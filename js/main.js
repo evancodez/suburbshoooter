@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- settings ----------
-  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '' };
+  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10 };
   try {
     const s = JSON.parse(localStorage.getItem('blockops_settings') || '{}');
     Object.assign(settings, s);
@@ -496,12 +496,18 @@
     lockPointer();
     staticMapDirty = true;
   }
+  function numVal(id, def, min, max) {
+    const v = Math.round(parseFloat($(id).value));
+    return isNaN(v) ? def : U.clamp(v, min, max);
+  }
   function startSolo() {
-    settings.bots = parseInt(document.querySelector('#botCount .sel').dataset.v);
+    settings.bots = numVal('botCountInput', 6, 0, 40);
+    settings.target = numVal('targetInput', 30, 1, 500);
+    settings.mins = numVal('timeInput', 10, 1, 90);
     settings.diff = document.querySelector('#diffSel .sel').dataset.v;
     saveSettings();
     if (G.net) G.net.leave();
-    baseStartMatch({ myTeam: 0 });
+    baseStartMatch({ myTeam: 0, target: settings.target, time: settings.mins * 60 });
     const roster = G.botMgr.rosterFor([0, settings.bots]);
     G.botMgr.init(scene, roster, settings.diff, false);
   }
@@ -753,12 +759,13 @@
       b.classList.add('sel');
     });
   }
-  selGroup('botCount'); selGroup('diffSel');
+  selGroup('diffSel');
   // preselect from settings
-  document.querySelectorAll('#botCount button').forEach(b => b.classList.toggle('sel', b.dataset.v == settings.bots));
   document.querySelectorAll('#diffSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.diff));
-  if (!document.querySelector('#botCount .sel')) document.querySelector('#botCount button[data-v="6"]').classList.add('sel');
   if (!document.querySelector('#diffSel .sel')) document.querySelector('#diffSel button[data-v="normal"]').classList.add('sel');
+  $('botCountInput').value = settings.bots;
+  $('targetInput').value = settings.target;
+  $('timeInput').value = settings.mins;
 
   function bindSlider(id, key, fmt) {
     const el = $(id);
@@ -851,22 +858,25 @@
         });
       });
     }
-    // bots + difficulty controls (host only editable)
-    $('botsAVal').textContent = N.lobby.cfg.botsA;
-    $('botsBVal').textContent = N.lobby.cfg.botsB;
+    // bots + match rules + difficulty controls (host only editable)
+    for (const [id, key, def] of [['botsAInput', 'botsA', 0], ['botsBInput', 'botsB', 3], ['lobbyTarget', 'target', 30], ['lobbyTime', 'mins', 10]]) {
+      if (document.activeElement !== $(id)) $(id).value = N.lobby.cfg[key] === undefined ? def : N.lobby.cfg[key];
+    }
     document.querySelectorAll('#lobbyDiff button').forEach(b => b.classList.toggle('sel', b.dataset.v === N.lobby.cfg.diff));
     document.querySelectorAll('.hostonly').forEach(el => { el.style.display = isHost ? '' : 'none'; });
     $('lobbyWait').style.display = isHost ? 'none' : 'block';
   }
-  function stepBots(key, d) {
-    const N = G.net;
-    if (!N || !N.isHost) return;
-    N.setCfg(key, U.clamp(N.lobby.cfg[key] + d, 0, 9));
+  for (const [id, key, def, min, max] of [
+    ['botsAInput', 'botsA', 0, 0, 20], ['botsBInput', 'botsB', 3, 0, 20],
+    ['lobbyTarget', 'target', 30, 1, 500], ['lobbyTime', 'mins', 10, 1, 90],
+  ]) {
+    $(id).addEventListener('change', () => {
+      if (!G.net || !G.net.isHost) return;
+      const v = numVal(id, def, min, max);
+      $(id).value = v;
+      G.net.setCfg(key, v);
+    });
   }
-  $('botsAMinus').addEventListener('click', () => stepBots('botsA', -1));
-  $('botsAPlus').addEventListener('click', () => stepBots('botsA', 1));
-  $('botsBMinus').addEventListener('click', () => stepBots('botsB', -1));
-  $('botsBPlus').addEventListener('click', () => stepBots('botsB', 1));
   $('lobbyDiff').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && G.net && G.net.isHost) G.net.setCfg('diff', b.dataset.v);

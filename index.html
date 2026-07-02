@@ -245,6 +245,11 @@
   .swapbtn { color: #777; font-size: 13px; }
   .lbots { font-size: 13.5px; color: #555; font-weight: bold; margin-top: 4px; }
   .stepper { display: inline-flex; align-items: center; gap: 8px; font-weight: bold; }
+  .numin {
+    font-family: inherit; font-weight: bold; font-size: 15px;
+    border: 3px solid #111; border-radius: 6px 9px 7px 8px;
+    padding: 4px 4px; width: 58px; text-align: center;
+  }
   .stepper button {
     font-family: inherit; font-weight: bold; font-size: 16px;
     background: #fff; border: 3px solid #111; border-radius: 6px;
@@ -293,9 +298,11 @@
   <div class="title">BLOCK OPS</div>
   <div class="subtitle">~ suburban warfare ~</div>
   <div class="panel">
-    <h3>ENEMIES</h3>
-    <div class="btnrow" id="botCount">
-      <button data-v="3">3</button><button data-v="6" class="sel">6</button><button data-v="9">9</button>
+    <h3>MATCH SETUP</h3>
+    <div class="mprow" style="flex-wrap:wrap">
+      <span class="stepper"><b>BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
+      <span class="stepper" style="margin-left:10px"><b>KILLS TO WIN</b> <input type="number" class="numin" id="targetInput" min="1" max="500" step="1"></span>
+      <span class="stepper" style="margin-left:10px"><b>MINUTES</b> <input type="number" class="numin" id="timeInput" min="1" max="90" step="1"></span>
     </div>
     <h3>DIFFICULTY</h3>
     <div class="btnrow" id="diffSel">
@@ -352,8 +359,12 @@
     </div>
     <div class="hostonly" style="font-size:13px; color:#666">click a player to swap their team</div>
     <div class="mprow hostonly">
-      <span class="stepper"><b>GREEN BOTS</b> <button id="botsAMinus">−</button><span id="botsAVal">0</span><button id="botsAPlus">+</button></span>
-      <span class="stepper" style="margin-left:14px"><b>RED BOTS</b> <button id="botsBMinus">−</button><span id="botsBVal">3</span><button id="botsBPlus">+</button></span>
+      <span class="stepper"><b>GREEN BOTS</b> <input type="number" class="numin" id="botsAInput" min="0" max="20" step="1"></span>
+      <span class="stepper" style="margin-left:14px"><b>RED BOTS</b> <input type="number" class="numin" id="botsBInput" min="0" max="20" step="1"></span>
+    </div>
+    <div class="mprow hostonly">
+      <span class="stepper"><b>KILLS TO WIN</b> <input type="number" class="numin" id="lobbyTarget" min="1" max="500" step="1"></span>
+      <span class="stepper" style="margin-left:14px"><b>MINUTES</b> <input type="number" class="numin" id="lobbyTime" min="1" max="90" step="1"></span>
     </div>
     <div class="mprow hostonly">
       <b>DIFFICULTY</b>
