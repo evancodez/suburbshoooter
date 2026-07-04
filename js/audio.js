@@ -95,6 +95,15 @@ G.audio = (function () {
 
   const A = { init, setVolume };
 
+  // capture hook: a MediaStream of the full mix (used by the trailer recorder)
+  A.tapStream = function () {
+    init();
+    if (!ctx) return null;
+    const dst = ctx.createMediaStreamDestination();
+    comp.connect(dst);
+    return dst.stream;
+  };
+
   A.shot = function (kind, pos) {
     if (!ctx) return;
     if (kind === 'ar') {
