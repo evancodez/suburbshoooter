@@ -397,6 +397,37 @@ window.T = (function () {
     border(x, 64, 128, 5, 'rgba(90,96,110,0.8)');
     return tex(c);
   };
+  // ---------- downtown surfaces ----------
+  T.cityWall = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#cdd2d8'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(60,66,74,0.4)'; x.lineWidth = 3;
+    wob(x, 2, 42, 126, 42, 6, 1.5);
+    wob(x, 2, 86, 126, 86, 6, 1.5);
+    wob(x, 64, 2, 64, 126, 6, 1.5);
+    for (let i = 0; i < 5; i++) blob(x, U.rand(10, 118), U.rand(10, 118), U.rand(3, 7), 6, 'rgba(150,156,164,0.5)', null);
+    border(x, 128, 128, 6, 'rgba(40,44,52,0.8)');
+    return tex(c);
+  };
+  T.billboard = function () {
+    const { c, x } = cnv(256, 128);
+    x.fillStyle = '#f5ead2'; x.fillRect(0, 0, 256, 128);
+    // burger
+    blob(x, 66, 66, 34, 9, '#e8a23e', 'rgba(90,50,10,0.8)', 4);
+    x.fillStyle = '#c23b2e'; x.fillRect(38, 58, 58, 10);
+    x.fillStyle = '#4a8f3f'; x.fillRect(42, 50, 50, 7);
+    // shouting text
+    x.fillStyle = '#c2312e';
+    x.font = 'bold 30px "Comic Sans MS", cursive';
+    x.fillText('BIG BITE', 118, 56);
+    x.fillStyle = '#20232a';
+    x.font = 'bold 20px "Comic Sans MS", cursive';
+    x.fillText('BURGERS!', 122, 84);
+    x.font = 'bold 12px "Comic Sans MS", cursive';
+    x.fillText('now 40% rubble-free', 118, 108);
+    border(x, 256, 128, 8);
+    return tex(c);
+  };
   T.tiki = function () {
     const { c, x } = cnv(64, 128);
     x.fillStyle = '#8a6a45'; x.fillRect(0, 0, 64, 128);

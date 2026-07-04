@@ -412,10 +412,11 @@ G.arsenal = (function () {
     G.game.chat('HQ', 'fast air on the way, keep your head down');
   };
   // a remote player's airstrike — bombs are visual, their owner sends the booms
-  A.spawnStrikeVisual = function (x, z) {
+  A.spawnStrikeVisual = function (x, z, friendly) {
     strikeVisuals.push({ x, z, t: 2.2, dropped: 0, dropT: 0 });
     G.audio.airstrikeCall();
-    G.game.banner('ENEMY AIRSTRIKE INBOUND', '#ff6a4a');
+    if (friendly) G.game.banner('FRIENDLY AIRSTRIKE INBOUND', '#7dcfff');
+    else G.game.banner('ENEMY AIRSTRIKE INBOUND', '#ff6a4a');
   };
   const strikeVisuals = [];
   const bombGeo = new THREE.CylinderGeometry(0.16, 0.05, 0.9, 6);
@@ -546,8 +547,8 @@ G.arsenal = (function () {
     adsT = U.damp(adsT, wantAds ? 1 : 0, 14, dt);
     // bloom decay
     bloom = Math.max(0, bloom - dt * 4.2);
-    // auto fire
-    if (fireHeld && G.player.alive && fireCd <= 0 && reloadT <= 0 && switchT <= 0 && !G.player.sprinting) {
+    // auto fire (sprinting doesn't stop the trigger finger)
+    if (fireHeld && G.player.alive && fireCd <= 0 && reloadT <= 0 && switchT <= 0) {
       if (def.auto || !state._clicked) {
         if (A.currentId === 'rl') {
           if (st.ammo > 0) { st.ammo--; shootRLWrap(); fireCd = def.interval; reloadT = st.reserve > 0 ? def.reload : 0; if (st.reserve > 0) { st.reserve--; st.ammo = 1; } }
@@ -597,8 +598,8 @@ G.arsenal = (function () {
     const pz = U.lerp(HIP.z, ads.z, adsT) + kickZ;
     m.position.set(px, py, pz);
     let rx = kickRot * 0.5, ry = 0, rz = 0;
-    // sprint pose
-    const sprintPose = P.sprinting && P.onGround && speed > 4 ? 1 : 0;
+    // sprint pose (gun levels while firing so you can run and gun)
+    const sprintPose = P.sprinting && P.onGround && speed > 4 && !fireHeld ? 1 : 0;
     m.userData.sprintT = U.damp(m.userData.sprintT || 0, sprintPose, 8, dt);
     const sp = m.userData.sprintT;
     rx += sp * 0.5; ry += sp * 0.45; rz += sp * 0.15;

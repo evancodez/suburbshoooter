@@ -131,7 +131,7 @@ G.net = (function () {
   N.evBoom = (pos, r, d, tag) => out({ t: 'bm', x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1), r, d, tag, an: N.myName, at: N.myTeam });
   N.evNade = (pos, vel) => out({ t: 'ng', x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1), vx: +vel.x.toFixed(1), vy: +vel.y.toFixed(1), vz: +vel.z.toFixed(1) });
   N.evRocket = (pos, vel) => out({ t: 'rk', x: +pos.x.toFixed(1), y: +pos.y.toFixed(1), z: +pos.z.toFixed(1), vx: +vel.x.toFixed(1), vy: +vel.y.toFixed(1), vz: +vel.z.toFixed(1) });
-  N.evStrike = (x, z) => out({ t: 'as', x: Math.round(x), z: Math.round(z) });
+  N.evStrike = (x, z) => out({ t: 'as', x: Math.round(x), z: Math.round(z), tm: N.myTeam });
   N.evDmgP = (id, d, fx, fz, an, at, tag) => {
     const msg = { t: 'dp', id, d: Math.round(d), fx: Math.round(fx), fz: Math.round(fz), an: an || N.myName, at: at === undefined ? N.myTeam : at, tag: tag || '' };
     if (N.isHost) routeDmgP(msg);
@@ -296,7 +296,7 @@ G.net = (function () {
         relay(msg, fromConn);
         break;
       case 'as':
-        G.arsenal.spawnStrikeVisual(msg.x, msg.z);
+        G.arsenal.spawnStrikeVisual(msg.x, msg.z, msg.tm === N.myTeam);
         relay(msg, fromConn);
         break;
       case 'dp':

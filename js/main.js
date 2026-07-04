@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- settings ----------
-  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs' };
+  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs', layout: 1 };
   try {
     const s = JSON.parse(localStorage.getItem('blockops_settings') || '{}');
     Object.assign(settings, s);
@@ -77,8 +77,11 @@
     }
     keys[e.code] = true;
     if (game.state !== 'playing' || !player.alive) return;
+    const L2 = (settings.layout || 1) === 2; // touchpad preset
     if (e.code === 'KeyR') G.arsenal.reload();
-    if (e.code === 'KeyG') G.arsenal.throwNade();
+    if (e.code === 'KeyG' && !L2) G.arsenal.throwNade();
+    if (e.code === 'KeyE' && L2) G.arsenal.throwNade();
+    if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && L2) G.arsenal.adsDown();
     if (e.code === 'KeyF') G.arsenal.melee();
     if (e.code === 'Digit1') G.arsenal.switchTo('ar');
     if (e.code === 'Digit2') G.arsenal.switchTo('sg');
@@ -89,6 +92,7 @@
   document.addEventListener('keyup', (e) => {
     keys[e.code] = false;
     if (e.code === 'KeyW') sprintLatch = false;
+    if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && (settings.layout || 1) === 2) G.arsenal.adsUp();
   });
   document.addEventListener('mousedown', (e) => {
     if (game.state !== 'playing' || game.paused) return; // paused: let the menu buttons take the click
@@ -154,7 +158,8 @@
     if (!player.alive) return;
 
     const sprintKey = sprintLatch && keys.KeyW; // double-tap W, keep holding
-    const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft || keys.ShiftRight;
+    const crouchKey = keys.KeyC || keys.ControlLeft ||
+      ((settings.layout || 1) === 1 && (keys.ShiftLeft || keys.ShiftRight)); // L2: Shift is ADS instead
     const fwd = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     const str = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
 
@@ -914,7 +919,13 @@
       b.classList.add('sel');
     });
   }
-  selGroup('diffSel'); selGroup('mapSel');
+  selGroup('diffSel'); selGroup('mapSel'); selGroup('layoutSel');
+  $('layoutSel').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { settings.layout = parseInt(b.dataset.v); saveSettings(); }
+  });
+  document.querySelectorAll('#layoutSel button').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.v) === (settings.layout || 1)));
+  if (!document.querySelector('#layoutSel .sel')) document.querySelector('#layoutSel button[data-v="1"]').classList.add('sel');
   // preselect from settings
   document.querySelectorAll('#diffSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.diff));
   if (!document.querySelector('#diffSel .sel')) document.querySelector('#diffSel button[data-v="normal"]').classList.add('sel');

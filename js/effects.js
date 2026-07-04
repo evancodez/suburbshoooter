@@ -48,20 +48,21 @@ G.fx = (function () {
     P.update = function (dt) {
       let any = false;
       const col = new THREE.Color();
+      const zg = G.world && G.world.zeroG; // space: things scatter, they don't fall
       for (let i = 0; i < cap; i++) {
         if (P.age[i] <= 0) continue;
         any = true;
         P.age[i] += dt;
         if (P.age[i] >= P.life[i]) {
-          if (P.flags[i] === 1 && P.py[i] < 2.2) FX.decal('splat', P.px[i], 0.02, P.pz[i], null, U.rand(0.25, 0.6));
+          if (!zg && P.flags[i] === 1 && P.py[i] < 2.2) FX.decal('splat', P.px[i], 0.02, P.pz[i], null, U.rand(0.25, 0.6));
           P.age[i] = 0;
           dummy.position.set(0, -999, 0); dummy.scale.setScalar(0.001); dummy.updateMatrix();
           P.mesh.setMatrixAt(i, dummy.matrix);
           continue;
         }
-        P.vy[i] -= P.grav[i] * dt;
+        P.vy[i] -= P.grav[i] * dt * (zg ? 0.03 : 1);
         P.px[i] += P.vx[i] * dt; P.py[i] += P.vy[i] * dt; P.pz[i] += P.vz[i] * dt;
-        if (P.py[i] < 0.03 && P.vy[i] < 0) {
+        if (!zg && P.py[i] < 0.03 && P.vy[i] < 0) {
           if (P.flags[i] === 1) { // blood drop lands -> splat decal
             FX.decal('splat', P.px[i], 0.02, P.pz[i], null, U.rand(0.2, 0.55));
             P.age[i] = 0;
@@ -183,26 +184,33 @@ G.fx = (function () {
         continue;
       }
       if (!d.asleep[i]) {
-        d.vel[i].y -= 16 * dt;
-        d.pos[i].addScaledVector(d.vel[i], dt);
-        const floorY = G.world ? G.world.groundHeightAt(d.pos[i].x, d.pos[i].z, d.pos[i].y) : 0;
-        const half = d.size[i].y * 0.5;
-        if (d.pos[i].y - half < floorY && d.vel[i].y < 0) {
-          d.pos[i].y = floorY + half;
-          d.vel[i].y *= -U.rand(0.25, 0.42);
-          d.vel[i].x *= 0.62; d.vel[i].z *= 0.62;
-          d.ang[i].multiplyScalar(0.5);
-          if (d.bloody[i]) FX.decal('splat', d.pos[i].x, floorY + 0.02, d.pos[i].z, null, U.rand(0.3, 0.7));
-          if (Math.abs(d.vel[i].y) < 0.9) {
-            d.vel[i].set(0, 0, 0); d.ang[i].set(0, 0, 0); d.asleep[i] = true;
-            d.pos[i].y = floorY + half * U.rand(0.75, 1);
+        const zg = G.world && G.world.zeroG;
+        if (zg) {
+          // zero-g: chunks tumble off into space, slowly bleeding speed
+          d.pos[i].addScaledVector(d.vel[i], dt);
+          d.vel[i].multiplyScalar(Math.pow(0.86, dt));
+        } else {
+          d.vel[i].y -= 16 * dt;
+          d.pos[i].addScaledVector(d.vel[i], dt);
+          const floorY = G.world ? G.world.groundHeightAt(d.pos[i].x, d.pos[i].z, d.pos[i].y) : 0;
+          const half = d.size[i].y * 0.5;
+          if (d.pos[i].y - half < floorY && d.vel[i].y < 0) {
+            d.pos[i].y = floorY + half;
+            d.vel[i].y *= -U.rand(0.25, 0.42);
+            d.vel[i].x *= 0.62; d.vel[i].z *= 0.62;
+            d.ang[i].multiplyScalar(0.5);
+            if (d.bloody[i]) FX.decal('splat', d.pos[i].x, floorY + 0.02, d.pos[i].z, null, U.rand(0.3, 0.7));
+            if (Math.abs(d.vel[i].y) < 0.9) {
+              d.vel[i].set(0, 0, 0); d.ang[i].set(0, 0, 0); d.asleep[i] = true;
+              d.pos[i].y = floorY + half * U.rand(0.75, 1);
+            }
           }
         }
         eul.set(d.ang[i].x * dt, d.ang[i].y * dt, d.ang[i].z * dt);
         tmpQ.setFromEuler(eul);
         d.quat[i].multiply(tmpQ);
         if (d.bloody[i] && Math.random() < 0.35) {
-          FX.blood.spawn(d.pos[i].x, d.pos[i].y, d.pos[i].z, U.rand(-1, 1), U.rand(-1, 0), U.rand(-1, 1), 9, 0.14, 0.05, 0.7, 0.7, 0.03, 0.03, 1);
+          FX.blood.spawn(d.pos[i].x, d.pos[i].y, d.pos[i].z, U.rand(-1, 1), U.rand(-1, 0), U.rand(-1, 1), zg ? 0.3 : 9, 0.14, 0.05, 0.7, 0.7, 0.03, 0.03, 1);
         }
       }
       const t = d.age[i] / d.life[i];

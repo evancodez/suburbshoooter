@@ -24,6 +24,9 @@ G.world = (function () {
     vend: 1100, cell: 80, shuttle: 25000, dish: 3000, solar: 1200, planter: 300,
     tank: 1500, locker: 150, kiosk: 700, pod: 850, droid: 650, tug: 4200, booth: 60,
     core: 1300, evapod: 2200, monolith: 2001,
+    // downtown
+    fountain: 4000, bus: 9500, cart: 700, train: 15000, billboard: 2600,
+    desk: 350, copier: 800, bench: 150, acduct: 380,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -415,9 +418,18 @@ G.world = (function () {
   // slabs for ground height. refY: only surfaces reachable from that height count
   // (so entities under a platform stay on the ground, entities on it stand on top)
   const slabs = [];
+  const groundHoles = []; // rects where the base ground plane is cut open (metro pits etc.)
+  W.groundHoles = groundHoles;
   W.groundHeightAt = function (x, z, refY) {
     const lim = (refY === undefined ? 1e9 : refY) + 0.6;
-    let y = W.hasGround ? 0 : -1e9; // space maps: no phantom floor at y=0
+    // no phantom floor in space, none below street level, and none over holes
+    let y = (W.hasGround && !(refY < -0.4)) ? 0 : -1e9;
+    if (y === 0) {
+      for (let i = 0; i < groundHoles.length; i++) {
+        const h = groundHoles[i];
+        if (x >= h.minx && x <= h.maxx && z >= h.minz && z <= h.maxz) { y = -1e9; break; }
+      }
+    }
     for (let i = 0; i < slabs.length; i++) {
       const s = slabs[i];
       if (x >= s.minx && x <= s.maxx && z >= s.minz && z <= s.maxz && s.top > y && s.top <= lim) y = s.top;
@@ -529,9 +541,10 @@ G.world = (function () {
       }
       if (!bridged) return true;
     }
-    // walls: standing range block
+    // walls: standing range block (only walls that exist at ground level)
     for (let i = 0; i < walls.length; i++) {
       const w = walls[i];
+      if (w.min.y > 1.7 || w.max.y < 0.4) continue; // elevated ship/deck walls don't block ground nav
       if (x < w.min.x - 0.45 || x > w.max.x + 0.45 || z < w.min.z - 0.45 || z > w.max.z + 0.45) continue;
       let c0, c1;
       if (w.dir === 'x') {
@@ -1102,6 +1115,29 @@ G.world = (function () {
       }
     } else if (prop.kind === 'droid' && G.game) {
       G.game.chat('MSE-6', 'bwee-boop... :(');
+    } else if (prop.kind === 'fountain') {
+      G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 65, kind: 'water', dur: 3.0 });
+      G.fx.decal('pool', prop.x, 0.03, prop.z, null, 3.6, new THREE.Color(0.45, 0.68, 1));
+      G.fx.shake(0.4, 0.3);
+      if (G.game) G.game.chat('CITY HALL', 'the wishing coins!! think of the wishes');
+    } else if (prop.kind === 'bus') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 6.5, 130, { attacker, tag: 'BUS' });
+    } else if (prop.kind === 'cart') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 5, 100, { attacker, tag: 'HOT DOG CART' });
+      if (G.game) G.game.chat('CITY HALL', 'the glizzy economy will never recover');
+    } else if (prop.kind === 'train') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 7.5, 155, { attacker, tag: 'THE 6 TRAIN' });
+      G.fx.shake(1.0, 0.8);
+      if (G.game) G.game.chat('CITY HALL', 'service on the 6 is suspended. forever.');
+    } else if (prop.kind === 'billboard') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      for (let i = 0; i < 4; i++)
+        G.fx.debris(tmpV, new THREE.Vector3(U.rand(-3, 3), U.rand(-2, 3), U.rand(2, 6)), 2.4, 1.1, 0.2, new THREE.Color(0xf5ead2), 8);
+      G.fx.shake(0.5, 0.4);
+      if (G.game) G.game.chat('CITY HALL', 'advertising revenue: gone');
     } else if (prop.kind === 'tank' && G.game) {
       G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 40, kind: 'water', dur: 1.4 });
     } else if (prop.kind === 'watertank') {
@@ -1718,6 +1754,7 @@ G.world = (function () {
     { id: 'construction', name: 'THE SITE' },
     { id: 'island', name: 'VOLCANO ISLAND' },
     { id: 'station', name: 'MERIDIAN STATION' },
+    { id: 'city', name: 'DOWNTOWN' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
@@ -1734,8 +1771,9 @@ G.world = (function () {
       roof: ChunkBatch(T.roof(), 2600),
       garage: ChunkBatch(T.garageDoor(), 160),
       fence: ChunkBatch(T.fence(), 900),
-      frame: ChunkBatch(T.fence(), 420),
-      glass: ChunkBatch(T.glassTex(), 900, { transparent: true, opacity: 0.62, renderOrder: 4 }),
+      frame: ChunkBatch(T.fence(), 640),
+      glass: ChunkBatch(T.glassTex(), 1500, { transparent: true, opacity: 0.62, renderOrder: 4 }),
+      city: ChunkBatch(T.cityWall(), 4800),
       chainlink: ChunkBatch(T.chainlink(), 460, { transparent: true, renderOrder: 3 }),
       plank: ChunkBatch(T.plywood(), 900),
       block: ChunkBatch(T.cinder(), 1000),
@@ -1755,6 +1793,7 @@ G.world = (function () {
     if (W.mapId === 'construction') buildSiteMap();
     else if (W.mapId === 'island') buildIslandMap();
     else if (W.mapId === 'station') buildStationMap();
+    else if (W.mapId === 'city') buildCityMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -2715,7 +2754,7 @@ G.world = (function () {
 
     // ================= WHEEL STATION "ODYSSEY RING" (NE, higher orbit) =================
     // a small 2001-style ring: square torus, hub, two spokes, pod bay, brain room
-    const WX = 38, WZ = -34, WY = 8; // hub center + deck height
+    const WX = 38, WZ = -34, WY = 18; // hub center + deck height (a full tier above the main station)
     const ringF = (x0, z0, x1, z1) => { tileGrid(x0, z0, x1, z1, WY); tileGrid(x0, z0, x1, z1, WY + 4.4); };
     // four ring segments (outer 26x26, tube width 6)
     ringF(WX - 13, WZ - 13, WX + 13, WZ - 7);   // north run
@@ -2770,15 +2809,58 @@ G.world = (function () {
     addProp('monolith', WX - 20, WY + 1, WZ + 6, 0.9, 4.0, 1.8, T.plain, 0x0a0a0e, 150, { metal: true });
     W.campSpots.push({ x: WX + 10, z: WZ, yaw: -Math.PI / 2 }, { x: WX, z: WZ, yaw: Math.PI });
 
-    // ---- supply line: drifting cargo between the two stations (flight cover) ----
-    addProp('pod', 18, 4.5, -18, 2.3, 2.3, 2.7, T.container, 0x8a94a4, 70, { metal: true });
-    addProp('pod', 26, 6.5, -24, 2.3, 2.3, 2.7, T.container, 0xc86a4a, 70, { metal: true });
-    addProp('crate', 22, 5.6, -21, 1.3, 1.1, 1.3, T.plain, 0x9aa4b4, 30, {});
-    addProp('crate', 30, 7.4, -28, 1.3, 1.1, 1.3, T.plain, 0xb0bac8, 30, {});
+    // ---- supply line: drifting cargo climbing toward the wheel (flight cover) ----
+    addProp('pod', 18, 6, -18, 2.3, 2.3, 2.7, T.container, 0x8a94a4, 70, { metal: true });
+    addProp('pod', 26, 10.5, -24, 2.3, 2.3, 2.7, T.container, 0xc86a4a, 70, { metal: true });
+    addProp('crate', 22, 8.4, -21, 1.3, 1.1, 1.3, T.plain, 0x9aa4b4, 30, {});
+    addProp('crate', 31, 14.2, -28, 1.3, 1.1, 1.3, T.plain, 0xb0bac8, 30, {});
     // a wrecked satellite drifting SW (loot-flavored scenery, all shootable)
     addProp('solar', -44, 2.2, 20, 5.0, 0.16, 2.4, T.solar, 0xffffff, 30, { noWalk: true, rotY: 0.7 });
     addProp('dish', -46.5, 1.4, 22.5, 1.1, 1.1, 1.1, T.console, 0x8a94a4, 45, { metal: true });
     addProp('pod', -47, 0.2, 19, 1.8, 1.8, 2.1, T.container, 0x6a7284, 60, { metal: true });
+
+    // ================= SMALL CRAFT (vertically scattered boarding targets) =================
+    // MULE-7 freighter: rusty hauler drifting BELOW the station's south flank
+    const MX = -34, MZ = 30, MY = -12;
+    tileGrid(MX - 7, MZ - 4, MX + 7, MZ + 4, MY);
+    tileGrid(MX - 7, MZ - 4, MX + 7, MZ + 4, MY + 3.4);
+    const mWall = (ox, oz, dir, cols, fn) => {
+      const wl = WallGrid({ ox, oz, oy: MY, dir, cols, rows: 4, cw: 1, ch: 0.72, th: 0.24, kind: 'hull', tint: 0xcac4ae, hp: 50, house: null });
+      wallFill(wl, fn);
+    };
+    mWall(MX - 7, MZ - 4, 'x', 14, (c, r) => (c >= 6 && c <= 7 && r <= 3) ? 1 : (c % 4 === 2 && r === 2) ? 3 : 0);   // port door
+    mWall(MX - 7, MZ + 4, 'x', 14, (c, r) => (c % 4 === 2 && r === 2) ? 3 : 0);
+    mWall(MX - 7, MZ - 4, 'z', 8, (c, r) => (r === 1 || r === 2) && c >= 2 && c <= 5 ? 3 : 0);                        // cockpit glass (west)
+    mWall(MX + 7, MZ - 4, 'z', 8, (c, r) => (c >= 2 && c <= 5 && r <= 3) ? 1 : 0);                                    // open cargo ramp (east)
+    addProp('console', MX - 5.6, MY, MZ, 2.2, 1.0, 0.8, T.console, 0x3a4252, 60, { metal: true });
+    addProp('crate', MX - 1, MY, MZ - 1.8, 1.3, 1.1, 1.3, T.plain, 0xb08a50, 30, {});
+    addProp('crate', MX + 1.5, MY, MZ - 1.4, 1.2, 1.0, 1.2, T.plain, 0x9aa4b4, 30, {});
+    addProp('crate', MX + 0.4, MY + 1.1, MZ - 1.6, 1.0, 0.9, 1.0, T.plain, 0xc9a05f, 25, {});
+    addProp('cell', MX + 3, MY, MZ + 2, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    addProp('pallet', MX - 2, MY, MZ + 2.2, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    // engine pods on the stern (they are, of course, explosive)
+    addProp('drum', MX - 7.9, MY + 0.6, MZ - 2.2, 1.3, 1.3, 1.3, T.propane, 0x5a5f66, 26, { metal: true });
+    addProp('drum', MX - 7.9, MY + 0.6, MZ + 2.2, 1.3, 1.3, 1.3, T.propane, 0x5a5f66, 26, { metal: true });
+    W.campSpots.push({ x: MX + 4, z: MZ, yaw: Math.PI / 2 });
+
+    // SPARROW gunship: parked HIGH on the north-west approach
+    const SX = -26, SZ = -26, SY = 21;
+    tileGrid(SX - 5, SZ - 3, SX + 5, SZ + 3, SY);
+    tileGrid(SX - 5, SZ - 3, SX + 5, SZ + 3, SY + 3.4);
+    const sWall = (ox, oz, dir, cols, fn) => {
+      const wl = WallGrid({ ox, oz, oy: SY, dir, cols, rows: 4, cw: 1, ch: 0.72, th: 0.24, kind: 'hull', tint: 0x9daab8, hp: 50, house: null });
+      wallFill(wl, fn);
+    };
+    sWall(SX - 5, SZ - 3, 'x', 10, (c, r) => (c % 3 === 1 && r === 2) ? 3 : 0);
+    sWall(SX - 5, SZ + 3, 'x', 10, (c, r) => (c >= 4 && c <= 6 && r <= 3) ? 1 : 0);                                   // rear ramp (south)
+    sWall(SX - 5, SZ - 3, 'z', 6, (c, r) => (r === 1 || r === 2) && c >= 1 && c <= 4 ? 3 : 0);
+    sWall(SX + 5, SZ - 3, 'z', 6, () => 0);
+    addProp('console', SX - 3.6, SY, SZ, 1.8, 1.0, 0.8, T.console, 0x3a4252, 60, { metal: true });
+    addProp('crate', SX + 2, SY, SZ - 1.4, 1.1, 0.9, 1.1, T.plain, 0x9aa4b4, 25, {});
+    addProp('cell', SX + 3.4, SY, SZ + 1.6, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    addProp('drum', SX + 5.9, SY + 0.5, SZ - 1.6, 1.2, 1.2, 1.2, T.propane, 0x5a5f66, 26, { metal: true });
+    addProp('drum', SX + 5.9, SY + 0.5, SZ + 1.6, 1.2, 1.2, 1.2, T.propane, 0x5a5f66, 26, { metal: true });
+    W.campSpots.push({ x: SX, z: SZ, yaw: 0 });
 
     // ---- space skybox: stars, a gas giant, hard sunlight ----
     scene.background = new THREE.Color(0x05060d);
@@ -2823,6 +2905,9 @@ G.world = (function () {
       x.strokeStyle = '#39404e'; x.lineWidth = 6 * s * 0.55;
       x.strokeRect((ox + 38 - 10) * s, (oz - 34 - 10) * s, 20 * s, 20 * s);
       x.fillRect((ox + 38 - 4) * s, (oz - 34 - 4) * s, 8 * s, 8 * s);
+      // small craft
+      x.fillRect((ox - 41) * s, (oz + 26) * s, 14 * s, 8 * s);
+      x.fillRect((ox - 31) * s, (oz - 29) * s, 10 * s, 6 * s);
     };
 
     // ---- live station: rotating dish, micrometeor showers ----
@@ -2831,7 +2916,8 @@ G.world = (function () {
     const hullPoints = [
       [31, 8.6, -10], [25, 8.6, 10], [-30, 7.3, -8], [-36, 7.3, 8], [0, 8.7, -13], [8, 8.7, 13],
       [-4, 6.2, -26], [5, 6.2, -30], [-6, 5.8, 24], [3, 5.8, 31], [13, 4.3, 0], [0, 4.3, -16],
-      [38, 12.6, -44], [28, 12.6, -34], [48, 12.6, -30], [38, 12.6, -24], // the wheel takes hits too
+      [38, 22.6, -44], [28, 22.6, -34], [48, 22.6, -30], [38, 22.6, -24], // the wheel takes hits too
+      [-34, -8.2, 30], [-26, 24.8, -26], // and the small craft
     ];
     W.mapUpdate = function (dt) {
       dish.rotation.y += dt * 0.5;
@@ -2860,6 +2946,280 @@ G.world = (function () {
         }
       }
     };
+  }
+
+  // ============ MAP 5: DOWNTOWN — glass, concrete, and the sound of both breaking ============
+  function buildCityMap() {
+    W.bounds = { x: 60, z: 50 };
+    W.teamSpawns = [{ x: -54, z: 0 }, { x: 54, z: 0 }];
+
+    // concrete city floor + streets
+    plane(460, 460, T.sidewalk(), 0, 0, 0).material.map.repeat.set(80, 80);
+    plane(122, 12, T.road(), 0, 0.02, 0).material.map.repeat.set(14, 1);
+    const cross = plane(102, 8, T.road(), 0, 0.023, 0);
+    cross.rotation.z = Math.PI / 2;
+    cross.material.map.repeat.set(12, 1);
+    // plaza pavement (split around the two metro stair pits)
+    plane(26, 17.4, T.driveway(), 27, 0.026, -29.3).material.map.repeat.set(8, 5);
+    plane(4.7, 5.3, T.driveway(), 16.35, 0.026, -17.95);
+    plane(10.2, 5.3, T.driveway(), 26.6, 0.026, -17.95);
+    plane(5.5, 5.3, T.driveway(), 37.25, 0.026, -17.95);
+    plane(26, 3.3, T.driveway(), 27, 0.026, -13.65);
+
+    // invisible city limits
+    addCollider(-66, 0, -54, -60.4, 20, 54, { noShoot: true });
+    addCollider(60.4, 0, -54, 66, 20, 54, { noShoot: true });
+    addCollider(-66, 0, -54, 66, 20, -50.4, { noShoot: true });
+    addCollider(-66, 0, 50.4, 66, 20, 54, { noShoot: true });
+
+    const CITY = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'city', tint: tint || 0xd8dde4, hp: hp || 60, house: null });
+      wallFill(wl, fn);
+    };
+    // office window bands: two glass rows per 5-row floor, skipping every 3rd column
+    const win = (extra) => (c, r) => {
+      if (extra) { const e = extra(c, r); if (e !== undefined) return e; }
+      return (r % 5 === 2 || r % 5 === 3) && c % 3 !== 0 ? 3 : 0;
+    };
+
+    // ---- TOWER A "PINNACLE" — 5 glass floors, stairwell core, fire escape ----
+    // walls (south lobby doors + skybridge doorway at floor 3)
+    CITY({ ox: -44, oz: 10 }, 'x', 24, 25, win((c, r) => {
+      if (c >= 10 && c <= 13 && r <= 3) return 1;                 // lobby doors
+      if (c >= 9 && c <= 12 && r >= 15 && r <= 18) return 1;      // skybridge doorway
+    }));
+    CITY({ ox: -44, oz: 36 }, 'x', 24, 25, win());
+    CITY({ ox: -44, oz: 10 }, 'z', 26, 25, win());
+    CITY({ ox: -20, oz: 10 }, 'z', 26, 25, win((c, r) => { if (c >= 12 && c <= 13 && r <= 3) return 1; })); // east door
+    // floors (with alternating stairwell holes on the west edge)
+    for (let L = 1; L <= 5; L++) {
+      const y = 3.6 * L;
+      buildPlatform(-30.5, 23, 20.6, 25.4, y, 0.3);               // main deck (x -40.8..-20.2)
+      const holeLo = (L % 2 === 1);                                // odd floors: hole at the south run
+      if (holeLo) {
+        buildPlatform(-42.25, 26.75, 2.9, 18.1, y, 0.3);          // strip z 17.7..35.8
+        buildPlatform(-42.25, 11.15, 2.9, 1.7, y, 0.3);           // stub z 10.3..12
+      } else {
+        buildPlatform(-42.25, 19.25, 2.9, 16.1, y, 0.3);          // strip z 11.2..27.3? (z 10.3..28.3)
+        buildPlatform(-42.25, 35, 2.9, 1.6, y, 0.3);              // stub z 34.2..35.8
+      }
+    }
+    // stairs: switchback flights up the west edge
+    for (let f = 0; f < 5; f++) {
+      if (f % 2 === 0) buildStairs(-42.2, 12.5, 0, 1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+      else buildStairs(-42.2, 33.5, 0, -1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+    }
+    // interior office clutter + plywood partitions (floors 1-3)
+    for (let L = 1; L <= 3; L++) {
+      const y = 3.6 * L;
+      const part = WallGrid({ ox: -36, oy: y, oz: 22 + (L % 2) * 4, dir: 'x', cols: 12, rows: 2, cw: 1, ch: 0.85, th: 0.12, kind: 'plank', tint: 0xcfd2d8, hp: 16, house: null });
+      wallFill(part, (c) => (c >= 5 && c <= 6) ? 1 : 0);
+      addProp('desk', -34 + (L % 2) * 6, y, 18, 2.2, 1.0, 0.9, T.console, 0x4a5262, 40, {});
+      addProp('desk', -27, y, 30 - (L % 2) * 6, 2.2, 1.0, 0.9, T.console, 0x4a5262, 40, {});
+      addProp('copier', -23, y, 14 + L * 2, 1.0, 1.2, 0.8, T.plain, 0xe8eaee, 30, { metal: true });
+      addProp('planter', -38, y, 33, 1.1, 0.8, 1.1, T.plain, 0x9a4f3f, 25, {});
+    }
+    addProp('vend', -21.6, 0, 32, 1.2, 2.0, 0.9, T.container, 0xc23b4e, 60, { metal: true });
+    addProp('desk', -32, 0, 28, 2.6, 1.05, 1.0, T.console, 0x3a4252, 50, {}); // lobby reception
+    addProp('planter', -40, 0, 12.5, 1.1, 0.8, 1.1, T.plain, 0x9a4f3f, 25, {});
+    addProp('planter', -24, 0, 12.5, 1.1, 0.8, 1.1, T.plain, 0x9a4f3f, 25, {});
+    // fire escape: south face balconies + chained ladders to the roof
+    for (let L = 0; L <= 4; L++) buildPlatform(-31.7, 36.9, 3.0, 1.5, 3.6 * (L + 1) - (L === 4 ? 0 : 0), 0.16);
+    for (let L = 0; L < 5; L++) addLadder(-31.7, 37.75, 3.6 * L, 3.6 * (L + 1), 's');
+    // roof: helipad, water tower, ducts, parapet
+    plane(10, 10, T.driveway(), -30, 18.06, 23);
+    for (const [wtx2, wtz2] of [[-38.6, 15.4], [-36.4, 15.4], [-38.6, 17.6], [-36.4, 17.6]]) buildPost(wtx2, wtz2, 2.6, 0.2, 18.0, steelGeos);
+    buildPlatform(-37.5, 16.5, 2.9, 2.9, 20.6, 0.16);
+    addProp('watertank', -37.5, 20.7, 16.5, 2.2, 2.1, 2.2, T.container, 0x8a6a4a, 220, { metal: true });
+    addProp('acduct', -25, 18.0, 15, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('acduct', -23, 18.0, 31, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('dish', -34, 18.0, 33.5, 0.9, 0.9, 0.9, T.console, 0x8a94a4, 45, { metal: true });
+    const parA = WallGrid({ ox: -44, oy: 18.0, oz: 10.1, dir: 'x', cols: 24, rows: 1, cw: 1, ch: 0.55, th: 0.25, kind: 'city', tint: 0xc4cad2, hp: 40, house: null });
+    wallFill(parA, () => 0);
+    const parA2 = WallGrid({ ox: -44, oy: 18.0, oz: 35.9, dir: 'x', cols: 24, rows: 1, cw: 1, ch: 0.55, th: 0.25, kind: 'city', tint: 0xc4cad2, hp: 40, house: null });
+    wallFill(parA2, () => 0);
+    W.campSpots.push({ x: -32, z: 26, yaw: Math.PI }, { x: -39, z: 13, yaw: Math.PI / 2 });
+
+    // ---- TOWER B "EXCHANGE" — 4 brick floors, billboard on the roof ----
+    CITY({ ox: -44, oz: -16 }, 'x', 20, 20, win((c, r) => {
+      if (c >= 8 && c <= 11 && r <= 3) return 1;                  // north lobby doors
+      if (c >= 9 && c <= 12 && r >= 15 && r <= 18) return 1;      // skybridge doorway
+    }), 0xc09070);
+    CITY({ ox: -44, oz: -38 }, 'x', 20, 20, win(), 0xc09070);
+    CITY({ ox: -44, oz: -38 }, 'z', 22, 20, win(), 0xc09070);
+    CITY({ ox: -24, oz: -38 }, 'z', 22, 20, win((c, r) => { if (c >= 10 && c <= 11 && r <= 3) return 1; }), 0xc09070);
+    for (let L = 1; L <= 4; L++) {
+      const y = 3.6 * L;
+      buildPlatform(-32.4, -27, 16.6, 21.4, y, 0.3);              // main deck (x -40.7..-23.8)
+      if (L % 2 === 1) { // odd floors: stairwell hole over the south flight
+        buildPlatform(-42.35, -23.4, 3.1, 14.0, y, 0.3);          // strip z -30.4..-16.4
+        buildPlatform(-42.35, -36.75, 3.1, 1.7, y, 0.3);          // stub z -37.6..-35.9
+      } else {           // even floors: hole over the north flight
+        buildPlatform(-42.35, -30.85, 3.1, 13.5, y, 0.3);         // strip z -37.6..-24.1
+        buildPlatform(-42.35, -17.1, 3.1, 1.4, y, 0.3);           // stub z -17.8..-16.4
+      }
+    }
+    for (let f = 0; f < 4; f++) {
+      if (f % 2 === 0) buildStairs(-42.2, -35.5, 0, 1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+      else buildStairs(-42.2, -18.5, 0, -1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+    }
+    for (let L = 1; L <= 3; L++) {
+      const y = 3.6 * L;
+      addProp('desk', -34, y, -32 + L * 3, 2.2, 1.0, 0.9, T.console, 0x5a4a42, 40, {});
+      addProp('crate', -27, y, -20 - L * 2, 1.2, 1.0, 1.2, T.plain, 0xb08a50, 30, {});
+    }
+    addProp('vend', -25.5, 0, -36.3, 1.2, 2.0, 0.9, T.container, 0x3f6fd0, 60, { metal: true });
+    addProp('desk', -33, 0, -22, 2.6, 1.05, 1.0, T.console, 0x3a4252, 50, {});
+    // east fire escape
+    for (let L = 0; L <= 3; L++) buildPlatform(-23.1, -26.7, 1.5, 3.0, 3.6 * (L + 1), 0.16);
+    for (let L = 0; L < 4; L++) addLadder(-22.25, -26.7, 3.6 * L, 3.6 * (L + 1), 'e');
+    // roof: THE BILLBOARD + ducts
+    addProp('billboard', -34, 14.4, -17.6, 6.6, 3.4, 0.4, T.billboard, 0xffffff, 90, {});
+    addProp('acduct', -28, 14.4, -30, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('cell', -40, 14.4, -34, 0.7, 1.2, 0.7, T.propane, 0xbfe8ff, 16, { metal: true });
+    W.campSpots.push({ x: -34, z: -26, yaw: 0 });
+
+    // ---- SKYBRIDGE (floor 3): glass tube over the avenue — shoot it out ----
+    for (const bz of [-13.6, -9.4, -5.2, -1, 3.2, 7.4])
+      addProp('tile', -33, 10.52, bz, 3.1, 0.28, 4.15, T.hullFloor, 0xcfd6de, 60, { step: true });
+    const railW = WallGrid({ ox: -34.55, oy: 10.8, oz: -15.7, dir: 'z', cols: 26, rows: 2, cw: 1, ch: 0.62, th: 0.14, kind: 'city', tint: 0xc4ccd6, hp: 30, house: null });
+    wallFill(railW, (c, r) => r === 1 ? 3 : 0);
+    const railE = WallGrid({ ox: -31.45, oy: 10.8, oz: -15.7, dir: 'z', cols: 26, rows: 2, cw: 1, ch: 0.62, th: 0.14, kind: 'city', tint: 0xc4ccd6, hp: 30, house: null });
+    wallFill(railE, (c, r) => r === 1 ? 3 : 0);
+
+    // ---- CONSTRUCTION HIGH-RISE (east): open steel decks, crane, ladders ----
+    for (const cx3 of [19, 28, 37])
+      for (const cz3 of [15, 24, 33]) buildPost(cx3, cz3, 13.4, 0.55, 0, steelGeos);
+    buildPlatform(28, 24, 20, 20, 4.4, 0.35);
+    buildPlatform(28, 24, 20, 20, 8.8, 0.35);
+    buildPlatform(28, 24, 20, 20, 13.2, 0.35);
+    for (let L = 0; L < 3; L++) addLadder(23, 13.85, 4.4 * L, 4.4 * (L + 1), 'n');
+    const fr1 = WallGrid({ ox: 18, oy: 4.4, oz: 33.9, dir: 'x', cols: 20, rows: 5, cw: 1, ch: 0.72, th: 0.14, kind: 'frame', tint: 0xd8b075, hp: 18, house: null });
+    wallFill(fr1, (c, r) => r === 4 ? 0 : (c >= 8 && c <= 11) ? 1 : c % 2 === 0 ? 0 : 1);
+    const fr2 = WallGrid({ ox: 37.9, oy: 4.4, oz: 14, dir: 'z', cols: 20, rows: 5, cw: 1, ch: 0.72, th: 0.14, kind: 'frame', tint: 0xd8b075, hp: 18, house: null });
+    wallFill(fr2, (c, r) => r === 4 ? 0 : c % 2 === 0 ? 0 : 1);
+    const ply3 = WallGrid({ ox: 18, oy: 8.8, oz: 14.1, dir: 'x', cols: 12, rows: 2, cw: 1, ch: 0.8, th: 0.12, kind: 'plank', tint: 0xd8b075, hp: 14, house: null });
+    wallFill(ply3, (c) => c % 5 === 4 ? 1 : 0);
+    const gr2 = WallGrid({ ox: 18, oy: 13.2, oz: 23.9, dir: 'x', cols: 20, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xc9a05f, hp: 14, house: null });
+    wallFill(gr2, (c) => (c >= 9 && c <= 11) ? 1 : 0);
+    addProp('barrel', 21, 4.75, 30, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('lumber', 33, 4.75, 18, 2.3, 0.55, 1.1, T.plain, 0xc9a05f, 30, {});
+    addProp('pallet', 25, 8.95, 20, 1.6, 1.1, 1.6, T.brick, 0xc27a5a, 70, {});
+    addProp('barrel', 34, 13.55, 30, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('mixer', 16, 0, 11, 1.5, 1.6, 1.2, T.plain, 0xd07030, 90, { metal: true });
+    addProp('barrel', 40.5, 0, 17, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrel', 41.6, 0, 18.2, 0.7, 1.05, 0.7, T.propane, 0xc23b2e, 20, { metal: true });
+    addProp('barrier', 12, 0, 14, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    addProp('barrier', 12, 0, 24, 1.8, 0.95, 0.35, T.hazard, 0xffffff, 20, {});
+    // tower crane hoisting a girder bundle over the decks
+    (() => { const g = U.shadedBoxGeo(3, 1.2, 3); g.translate(45, 0.6, 40); steelGeos.push(g); })();
+    addCollider(43.5, 0, 38.5, 46.5, 1.2, 41.5, { metal: true });
+    for (const [mx3, mz3] of [[44.1, 39.1], [45.9, 39.1], [44.1, 40.9], [45.9, 40.9]])
+      buildPost(mx3, mz3, 16.3, 0.3, 1.2, steelGeos);
+    addLadder(45, 41.35, 0, 17.5, 's');
+    buildPlatform(45, 40, 3, 3, 17.5, 0.25);
+    buildPlatform(36, 40, 21, 1.3, 17.65, 0.22); // jib toward the site
+    (() => { const g = U.shadedBoxGeo(0.1, 6.2, 0.1); g.translate(29, 14.4, 40); steelGeos.push(g); })();
+    addProp('lumber', 29, 10.9, 40, 3.2, 0.5, 0.9, T.plain, 0x8a94a4, 35, { metal: true });
+    addProp('lumber', 29, 11.5, 40, 3.2, 0.5, 0.9, T.plain, 0x6a7484, 35, { metal: true });
+    W.campSpots.push({ x: 28, z: 28, yaw: Math.PI }, { x: 14.5, z: 12, yaw: -2.2 });
+
+    // ---- PLAZA + THE METRO BENEATH IT ----
+    addProp('fountain', 27, 0, -25, 3.4, 1.15, 3.4, T.plain, 0xbfc9d4, 140, {});
+    plane(5.2, 5.2, T.water(), 27, 0.03, -25);
+    addProp('moai', 34, 0, -31, 1.6, 3.0, 1.6, T.tiki, 0x9aa2ae, 200, {}); // The Founder
+    addProp('cart', 18, 0, -17.5, 1.9, 1.6, 1.1, T.plain, 0xc23b2e, 40, { metal: true });
+    addProp('cart', 37, 0, -14.8, 1.9, 1.6, 1.1, T.plain, 0xe8b83e, 40, { metal: true });
+    addProp('bench', 21, 0, -31, 1.7, 0.55, 0.6, T.plain, 0x8a5f3f, 25, {});
+    addProp('bench', 33, 0, -20.5, 1.7, 0.55, 0.6, T.plain, 0x8a5f3f, 25, {});
+    addProp('planter', 15.5, 0, -30, 1.1, 0.8, 1.1, T.plain, 0x9a4f3f, 25, {});
+    addProp('planter', 39, 0, -35, 1.1, 0.8, 1.1, T.plain, 0x9a4f3f, 25, {});
+    for (const [lx2, lz2] of [[16, -14], [38, -32]]) {
+      buildPost(lx2, lz2, 5.2, 0.17, 0, steelGeos);
+      (() => { const g = U.shadedBoxGeo(0.7, 0.35, 0.35); g.translate(lx2, 5.3, lz2); steelGeos.push(g); })();
+    }
+    // metro hall (y -4.2), two stair pits up to the plaza
+    plane(18, 18, T.sidewalk(), 27, -4.19, -25).material.map.repeat.set(7, 7);
+    slabs.push({ minx: 18, minz: -34, maxx: 36, maxz: -16, top: -4.2 });
+    const MET = (o, dir, cols, fn) => {
+      const wl = WallGrid({ ...o, oy: -4.2, dir, cols, rows: 6, cw: 1, ch: 0.72, th: 0.3, kind: 'city', tint: 0xd0c8b0, hp: 55, house: null });
+      wallFill(wl, fn);
+    };
+    MET({ ox: 18, oz: -16 }, 'x', 18, (c, r) => (c >= 1 && c <= 3) || (c >= 14 && c <= 16) ? 1 : 0); // stair openings
+    MET({ ox: 18, oz: -34 }, 'x', 18, () => 0);
+    MET({ ox: 18, oz: -34 }, 'z', 18, () => 0);
+    MET({ ox: 36, oz: -34 }, 'z', 18, () => 0);
+    buildStairs(20, -19.9, 0, 1, 2.2, 9, 0.47, 0.5, -4.2);
+    buildStairs(33, -19.9, 0, 1, 2.2, 9, 0.47, 0.5, -4.2);
+    // street deck over the hall (walkable, with the two stair pits open)
+    addCollider(18, -0.35, -34, 36, 0, -20.6, { step: true });
+    addCollider(21.4, -0.35, -20.6, 31.6, 0, -15.6, { step: true });
+    addCollider(18, -0.35, -20.6, 18.7, 0, -15.6, { step: true });
+    addCollider(34.3, -0.35, -20.6, 36, 0, -15.6, { step: true });
+    // the base ground plane is CUT under the hall (the pits are real holes)
+    groundHoles.push({ minx: 18, minz: -34, maxx: 36, maxz: -16 });
+    // invisible nav fences: bots don't wander into the pits (players can)
+    addCollider(18.7, 0.6, -20.6, 21.4, 1.5, -15.6, { noWalk: true, noShoot: true });
+    addCollider(31.6, 0.6, -20.6, 34.3, 1.5, -15.6, { noWalk: true, noShoot: true });
+    // platform furniture + the 6 train
+    for (const [px7, pz7] of [[22, -23], [27, -23], [32, -23]]) buildPost(px7, pz7, 4.1, 0.34, -4.2, steelGeos);
+    plane(16, 3.6, T.road(), 27, -4.18, -28.6).material.map.repeat.set(5, 1);
+    addProp('train', 23, -4.2, -28.6, 7, 2.6, 2.4, T.container, 0xd8b23e, 400, { metal: true });
+    addProp('train', 31.5, -4.2, -28.6, 7, 2.6, 2.4, T.container, 0xc23b2e, 400, { metal: true });
+    addProp('bench', 22, -4.2, -18.5, 1.7, 0.55, 0.6, T.plain, 0x6a7484, 25, {});
+    addProp('bench', 30, -4.2, -18.5, 1.7, 0.55, 0.6, T.plain, 0x6a7484, 25, {});
+    addProp('vend', 35.2, -4.2, -22, 1.2, 2.0, 0.9, T.container, 0x3f8f5f, 60, { metal: true });
+    addProp('kiosk', 26, -4.2, -20, 1.5, 1.9, 1.2, T.container, 0x8a5fd0, 60, { metal: true });
+
+    // ---- SHOPS ROW (north): storefront glass + walkable roof ----
+    CITY({ ox: -12, oz: 40 }, 'x', 26, 5, (c, r) => {
+      if ((c === 4 || c === 5 || c === 18 || c === 19) && r <= 3) return 1;  // doors
+      return (r >= 1 && r <= 3 && c % 4 !== 3) ? 3 : 0;                       // storefront glass
+    }, 0xd9cdb8);
+    CITY({ ox: -12, oz: 48 }, 'x', 26, 5, (c, r) => (c === 12 && r <= 3) ? 1 : 0, 0xd9cdb8);
+    CITY({ ox: -12, oz: 40 }, 'z', 8, 5, () => 0, 0xd9cdb8);
+    CITY({ ox: 14, oz: 40 }, 'z', 8, 5, () => 0, 0xd9cdb8);
+    buildPlatform(1, 44, 25.4, 7.4, 3.75, 0.25);
+    addLadder(13.3, 48.35, 0, 3.75, 's');
+    addProp('acduct', -6, 3.75, 44, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('acduct', 8, 3.75, 45, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('desk', -6, 0, 42.4, 2.4, 1.05, 0.9, T.console, 0x3a4252, 50, {});
+    addProp('desk', 7, 0, 42.4, 2.4, 1.05, 0.9, T.console, 0x3a4252, 50, {});
+    addProp('vend', -10.8, 0, 46.5, 1.2, 2.0, 0.9, T.container, 0xc23b4e, 60, { metal: true });
+    addProp('vend', 12.6, 0, 46.5, 1.2, 2.0, 0.9, T.container, 0xe8a23e, 60, { metal: true });
+    addProp('shelf', 0, 0, 46.8, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('shelf', 3, 0, 46.8, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    W.campSpots.push({ x: 1, z: 44, yaw: Math.PI });
+
+    // ---- STREET LIFE ----
+    buildCar(-16, 3, true, 0x9aa0a6);
+    buildCar(8, -3, true, 0x3b6bd6);
+    buildCar(34, 3, true, 0xe8e8e8);
+    buildCar(3, 22, false, 0xc84040);
+    buildCar(-3, -26, false, 0x8040c0);
+    addProp('bus', -28, 0, -3, 6.2, 2.5, 2.2, T.container, 0xe8a23e, 220, { metal: true });
+    addProp('hydrant', 8, 0, 8, 0.5, 0.95, 0.5, T.hydrant, 0xffffff, 30, { metal: true });
+    addProp('hydrant', -8, 0, -8, 0.5, 0.95, 0.5, T.hydrant, 0xffffff, 30, { metal: true });
+    addProp('trash', -14, 0, 7.4, 0.65, 1.05, 0.65, T.trash, 0xffffff, 15, { metal: true });
+    addProp('trash', 16, 0, -7.4, 0.65, 1.05, 0.65, T.trash, 0xffffff, 15, { metal: true });
+    addProp('cart', -8, 0, 8.6, 1.9, 1.6, 1.1, T.plain, 0x4a8f3f, 40, { metal: true });
+
+    W.spawnPoints = [
+      { x: -54, z: 0 }, { x: 54, z: 0 }, { x: -54, z: -30 }, { x: -54, z: 30 },
+      { x: 54, z: -30 }, { x: 54, z: 30 }, { x: 0, z: -44 }, { x: 0, z: 37 },
+      { x: -34, z: 44 }, { x: 30, z: 44 }, { x: 46, z: -8 }, { x: -12, z: -44 },
+      { x: 8, z: 20 }, { x: 44, z: -40 },
+    ];
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#3a3d44';
+      x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#23252a';
+      x.fillRect(0, (oz - 6) * s, 144 * s, 12 * s);
+      x.fillRect((ox - 4) * s, 0, 8 * s, 116 * s);
+      x.fillStyle = '#565b64';
+      x.fillRect((ox + 14) * s, (oz - 38) * s, 26 * s, 26 * s);
+    };
+    addSky(0xffa964, { cloudTint: 0xffd9b8, sunTint: 0xffc24a, sunPos: [140, 52, 70], sunScale: 34 });
   }
 
   function buildPalm(x, z, lean) {
@@ -2903,7 +3263,7 @@ G.world = (function () {
     delayedBreaks.length = 0; dirtyWalls.length = 0; navDirty.length = 0;
     treeCanopyGeos.length = 0; poleGeos.length = 0; poleTops.length = 0; stairGeos.length = 0;
     steelGeos.length = 0; rockGeos.length = 0; frondGeos.length = 0; palmTrunkGeos.length = 0; sandGeos.length = 0;
-    ladders.length = 0; lavas.length = 0; geysers.length = 0;
+    ladders.length = 0; lavas.length = 0; geysers.length = 0; groundHoles.length = 0;
     W.campSpots.length = 0;
     W.bill = {}; W.billTotal = 0; W.chunksDestroyed = 0;
     W.build(scene);
