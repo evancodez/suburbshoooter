@@ -577,13 +577,21 @@ G.botMgr = (function () {
       bot.animPhase += dt * 6;
       bot.yaw = bot.targetYaw = Math.atan2(-L.fx, -L.fz); // face the rungs
       bot.group.rotation.y = bot.yaw;
-      if (bp.y >= L.topY) { // crest: step onto the deck
-        bp.x = L.cx - L.fx * 1.0;
-        bp.z = L.cz - L.fz * 1.0;
-        bp.y = G.world.standHeightAt(bp.x, bp.z, L.topY + 0.4);
-        bot.climb = null;
-        bot.path = null;
-        bot.ladderCd = 0.6; // short: chained climbs continue promptly
+      if (bp.y >= L.topY) {
+        // stacked segment above (fire escapes)? keep the hands moving
+        const nxt = (G.world.ladders || []).find((l2) => l2 !== L &&
+          Math.abs(l2.cx - L.cx) < 0.8 && Math.abs(l2.cz - L.cz) < 0.8 &&
+          L.topY >= l2.baseY - 0.3 && L.topY < l2.topY - 0.1);
+        if (nxt) {
+          bot.climb = nxt;
+        } else { // true crest: step onto the deck
+          bp.x = L.cx - L.fx * 1.0;
+          bp.z = L.cz - L.fz * 1.0;
+          bp.y = G.world.standHeightAt(bp.x, bp.z, L.topY + 0.4);
+          bot.climb = null;
+          bot.path = null;
+          bot.ladderCd = 0.6;
+        }
       }
       animate(bot, dt, false, null, 10);
       return;

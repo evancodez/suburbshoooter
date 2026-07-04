@@ -268,16 +268,19 @@
       player.slideT = -1;
       const climb = wantsUp ? 3.1 : keys.KeyS ? -3.8 : 0;
       player.vel.y = 0;
-      player.pos.y = Math.min(player.pos.y + climb * dt, lad.topY);
+      // stacked ladder segments (fire escapes): climb straight through the
+      // joins — only the very top of the chain is a real crest
+      const nextLad = G.world.ladderAt(player.pos.x, player.pos.z, lad.topY + 0.05);
+      player.pos.y = Math.min(player.pos.y + climb * dt, nextLad ? nextLad.topY : lad.topY);
       if (player.pos.y < floorY) player.pos.y = floorY;
       player.onGround = player.pos.y <= floorY + 0.01;
       if (!player.onGround) {
         const k = Math.pow(0.002, dt);
         player.vel.x *= k; player.vel.z *= k;
       }
-      if (player.pos.y >= lad.topY - 0.001 && wantsUp) { // crest: hop onto the deck
+      if (!nextLad && player.pos.y >= lad.topY - 0.001 && wantsUp) { // crest: hop onto the deck
         player.vel.y = 2.6;
-        player.ladderCd = 0.5;
+        player.ladderCd = 0.45;
         player.onGround = false;
       }
     } else if (keys.Space && player.onGround) {
