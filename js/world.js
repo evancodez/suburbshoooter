@@ -26,6 +26,8 @@ G.world = (function () {
     core: 1300, evapod: 2200, monolith: 2001,
     // downtown
     fountain: 4000, bus: 9500, cart: 700, train: 15000, billboard: 2600,
+    fossil: 20000, painting: 12000, vase: 3000, case: 150, sarcoph: 9000, meteor: 18000,
+    obelisk: 5000, jar: 800, pedestal: 200, rope: 30, plush: 40, relic: 2500, rocket: 7000,
     desk: 350, copier: 800, bench: 150, acduct: 380,
   };
   W.bill = {}; W.billTotal = 0;
@@ -1063,6 +1065,22 @@ G.world = (function () {
     prop.collider.gone = true;
     if (prop.mesh.parent) prop.mesh.parent.remove(prop.mesh);
     W.addMoney(prop.kind);
+    // museum security: destroying exhibits trips the alarm and every idle
+    // bot in earshot comes to see who's redecorating
+    if (W.mapId === 'museum' && ['painting', 'case', 'vase', 'fossil', 'sarcoph', 'meteor', 'obelisk', 'jar', 'relic', 'moai', 'camera'].includes(prop.kind)) {
+      if ((W.alarmT || 0) <= 0) {
+        W.alarmT = 16;
+        if (G.game) {
+          G.game.banner('⚠ MUSEUM ALARM TRIGGERED ⚠', '#ff5544');
+          G.game.chat('SECURITY', U.pick(['unit 2 respond, someone is TOUCHING THE ART', 'the insurance premiums!!', 'code red in the exhibit hall']));
+        }
+        G.audio.uav();
+      }
+      if (G.botMgr && G.botMgr.onNoise) {
+        tmpV.set(prop.x, prop.y, prop.z);
+        G.botMgr.onNoise(tmpV, 60);
+      }
+    }
     for (let i = 0; i < 4; i++) {
       tmpV.set(prop.x + U.rand(-0.3, 0.3), prop.y + U.rand(-0.2, 0.4), prop.z + U.rand(-0.3, 0.3));
       G.fx.debris(tmpV, new THREE.Vector3(U.rand(-3, 3), U.rand(2, 5), U.rand(-3, 3)),
@@ -1117,6 +1135,16 @@ G.world = (function () {
       }
     } else if (prop.kind === 'droid' && G.game) {
       G.game.chat('MSE-6', 'bwee-boop... :(');
+    } else if (prop.kind === 'meteor') {
+      // 4.6 billion years old, zero survivors
+      tmpV.set(prop.x, prop.y + 0.5, prop.z);
+      W.explode(tmpV, 7, 150, { attacker, tag: 'METEORITE' });
+      G.fx.shake(1.0, 0.8);
+      if (G.game) G.game.chat('CURATOR', 'that rock outlived the dinosaurs. it did not outlive you.');
+    } else if (prop.kind === 'fossil' && G.game) {
+      G.game.chat('CURATOR', U.pick(['SUE JR!! NO!!', '65 million years, gone in one afternoon', 'the paleontology department is weeping']));
+    } else if (prop.kind === 'painting' && G.game) {
+      if (Math.random() < 0.5) G.game.chat('CURATOR', U.pick(['that was a priceless blob-ist masterpiece', 'my thesis was on that painting', 'the artist felt things when they made that']));
     } else if (prop.kind === 'fountain') {
       G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 65, kind: 'water', dur: 3.0 });
       G.fx.decal('pool', prop.x, 0.03, prop.z, null, 3.6, new THREE.Color(0.45, 0.68, 1));
@@ -1764,6 +1792,7 @@ G.world = (function () {
     { id: 'island', name: 'VOLCANO ISLAND' },
     { id: 'station', name: 'MERIDIAN STATION' },
     { id: 'city', name: 'DOWNTOWN' },
+    { id: 'museum', name: 'THE MUSEUM' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
@@ -1783,6 +1812,7 @@ G.world = (function () {
       frame: ChunkBatch(T.fence(), 640),
       glass: ChunkBatch(T.glassTex(), 1500, { transparent: true, opacity: 0.62, renderOrder: 4 }),
       city: ChunkBatch(T.cityWall(), 4800),
+      marble: ChunkBatch(T.marble(), 3600),
       chainlink: ChunkBatch(T.chainlink(), 460, { transparent: true, renderOrder: 3 }),
       plank: ChunkBatch(T.plywood(), 900),
       block: ChunkBatch(T.cinder(), 1000),
@@ -1803,6 +1833,7 @@ G.world = (function () {
     else if (W.mapId === 'island') buildIslandMap();
     else if (W.mapId === 'station') buildStationMap();
     else if (W.mapId === 'city') buildCityMap();
+    else if (W.mapId === 'museum') buildMuseumMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -3231,6 +3262,175 @@ G.world = (function () {
     addSky(0xffa964, { cloudTint: 0xffd9b8, sunTint: 0xffc24a, sunPos: [140, 52, 70], sunScale: 34 });
   }
 
+  // ============ MAP 6: THE MUSEUM — priceless. was priceless. ============
+  function buildMuseumMap() {
+    W.bounds = { x: 42, z: 34 };
+    W.teamSpawns = [{ x: -38, z: 0 }, { x: 38, z: 0 }];
+    W.alarmT = 0;
+
+    // lawn + walkway up to the entrance
+    plane(460, 460, T.grass(), 0, 0, 0).material.map.repeat.set(70, 70);
+    plane(8, 22, T.sidewalk(), 0, 0.02, 23).material.map.repeat.set(3, 8);
+    plane(70, 52, T.driveway(), 0, 0.018, -3).material.map.repeat.set(20, 15); // museum slab
+    addCollider(-48, 0, -40, -42.4, 8, 40, { noShoot: true });
+    addCollider(42.4, 0, -40, 48, 8, 40, { noShoot: true });
+    addCollider(-48, 0, -40, 48, 8, -34.4, { noShoot: true });
+    addCollider(-48, 0, 34.4, 48, 8, 40, { noShoot: true });
+
+    const MRB = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ...o, oy: 0, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'marble', tint: tint || 0xf2f0ea, hp: hp || 55, house: null });
+      wallFill(wl, fn);
+    };
+    // ---- GRAND HALL (x -15..15, z -12..12), glass skylight roof ----
+    MRB({ ox: -15, oz: 12 }, 'x', 30, 10, (c, r) => (c >= 12 && c <= 17 && r <= 4) ? 1 : (r >= 7 && r <= 8 && c % 2 === 0) ? 3 : 0); // grand entrance
+    MRB({ ox: -15, oz: -12 }, 'x', 30, 10, (c, r) => (c >= 13 && c <= 16 && r <= 3) ? 1 : (r >= 7 && r <= 8 && c % 2 === 0) ? 3 : 0); // to art wing
+    MRB({ ox: -15, oz: -12 }, 'z', 24, 10, (c, r) => (c >= 10 && c <= 13 && r <= 3) ? 1 : (r >= 7 && r <= 8 && c % 2 === 0) ? 3 : 0); // to egypt
+    MRB({ ox: 15, oz: -12 }, 'z', 24, 10, (c, r) => (c >= 10 && c <= 13 && r <= 3) ? 1 : (r >= 7 && r <= 8 && c % 2 === 0) ? 3 : 0);  // to science
+    const sky = Sheet('glass', 0xffffff);
+    for (let gx = 0; gx < 15; gx++)
+      for (let gz = 0; gz < 12; gz++)
+        sheetAdd(sky, -15 + 1 + gx * 2, 7.65 + Math.sin(gx / 14 * Math.PI) * 0.8, -12 + 1 + gz * 2, 0, 'x', 2.02, 0.1, 2.02, 8);
+    // portico columns out front
+    for (const px8 of [-9, -4.5, 4.5, 9]) {
+      buildPost(px8, 14.2, 6.4, 0.7, 0, stairGeos);
+      addProp('rope', px8 - 2.2, 0, 14.2, 1.6, 0.75, 0.12, T.plain, 0x8a2a3e, 8, { noWalk: true });
+    }
+    // ---- SUE JR. — the t-rex (every bone is a five-figure lawsuit) ----
+    buildPlatform(0, 0, 8.5, 4.4, 0.35, 0.35);
+    const bone = (x, y, z, sx, sy, sz) => addProp('fossil', x, y, z, sx, sy, sz, T.plain, 0xe8e2d0, 45, {});
+    bone(-1.2, 0.35, -0.9, 0.55, 2.3, 0.7);   // legs
+    bone(-1.2, 0.35, 0.9, 0.55, 2.3, 0.7);
+    bone(-0.2, 2.55, 0, 3.6, 1.0, 1.1);       // spine + ribcage
+    bone(-0.4, 1.55, 0, 2.0, 1.05, 1.5);
+    bone(1.9, 2.9, 0, 1.3, 0.8, 0.75);        // neck
+    bone(3.0, 3.3, 0, 1.7, 1.05, 0.95);       // skull
+    bone(-2.6, 2.2, 0, 1.6, 0.55, 0.6);       // tail
+    bone(-3.9, 1.7, 0, 1.4, 0.45, 0.5);
+    for (const [rx2, rz2] of [[-3.4, -2.6], [0, -2.6], [3.4, -2.6], [-3.4, 2.6], [0, 2.6], [3.4, 2.6]])
+      addProp('rope', rx2, 0, rz2, 1.9, 0.75, 0.12, T.plain, 0x8a2a3e, 8, { noWalk: true });
+    // gallery mezzanine ring + two staircases + maintenance ladder
+    buildPlatform(0, -10, 27, 3.6, 3.6, 0.25);
+    buildPlatform(-13.2, -1.5, 3.4, 13.6, 3.6, 0.25);
+    buildPlatform(13.2, -1.5, 3.4, 13.6, 3.6, 0.25);
+    buildStairs(-13.1, 6.2, 0, -1, 3.0, 10, 0.36, 0.5);
+    buildStairs(13.1, 6.2, 0, -1, 3.0, 10, 0.36, 0.5);
+    addLadder(0.5, -8.05, 0, 3.6, 's'); // maintenance ladder up to the north gallery
+    const mzr2 = WallGrid({ ox: -11.5, oy: 3.6, oz: -8.05, dir: 'x', cols: 23, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xb8912e, hp: 14, house: null });
+    wallFill(mzr2, (c) => (c >= 10 && c <= 12) ? 1 : 0);
+    for (const sgn of [-1, 1]) {
+      const r2 = WallGrid({ ox: sgn * 11.4, oy: 3.6, oz: -8, dir: 'z', cols: 9, rows: 1, cw: 1, ch: 0.8, th: 0.1, kind: 'plank', tint: 0xb8912e, hp: 14, house: null });
+      wallFill(r2, (c) => c >= 7 ? 1 : 0);
+    }
+    // upstairs paintings + cases
+    addProp('painting', -9, 4.8, -11.7, 1.7, 1.3, 0.14, T.painting, 0xffffff, 20, {});
+    addProp('painting', 3, 4.8, -11.7, 1.7, 1.3, 0.14, T.painting, 0xffffff, 20, {});
+    addProp('case', -8, 3.6, -9.6, 0.9, 1.5, 0.9, T.glassTex, 0xdff2ff, 12, { glassy: true });
+    addProp('relic', -8, 3.72, -9.6, 0.45, 0.5, 0.45, T.plain, 0xd8b23e, 20, {});
+
+    // ---- EGYPT WING (west) ----
+    MRB({ ox: -33, oz: -10 }, 'x', 18, 7, (c, r) => (r === 4 && c % 3 === 1) ? 3 : 0, 0xd8c090);
+    MRB({ ox: -33, oz: 10 }, 'x', 18, 7, (c, r) => (r === 4 && c % 3 === 1) ? 3 : 0, 0xd8c090);
+    MRB({ ox: -33, oz: -10 }, 'z', 20, 7, () => 0, 0xd8c090);
+    tileGridM(-33, -10, -15, 10, 5.05);
+    addProp('obelisk', -24, 0, 0, 1.1, 4.6, 1.1, T.plain, 0xc9a55f, 120, {});
+    addProp('sarcoph', -29, 0, -6, 2.5, 1.5, 1.2, T.plain, 0xd8b23e, 90, {});
+    addProp('sarcoph', -29, 0, 6, 2.5, 1.5, 1.2, T.plain, 0xc9a05f, 90, {});
+    addProp('case', -19, 0, -6.5, 0.9, 1.6, 0.9, T.glassTex, 0xdff2ff, 12, { glassy: true });
+    addProp('jar', -19, 0.15, -6.5, 0.42, 0.6, 0.42, T.plain, 0x9a6b3f, 15, {});
+    addProp('jar', -20.8, 0, 7.6, 0.5, 0.75, 0.5, T.plain, 0x8a5f2f, 15, {});
+    addProp('jar', -17.6, 0, 7.9, 0.5, 0.7, 0.5, T.plain, 0xa9713d, 15, {});
+    addProp('painting', -32.8, 2.2, -3, 0.14, 1.4, 1.9, T.painting, 0xffffff, 20, {});
+    addProp('painting', -32.8, 2.2, 3, 0.14, 1.4, 1.9, T.painting, 0xffffff, 20, {});
+    W.campSpots.push({ x: -29, z: 0, yaw: Math.PI / 2 });
+
+    // ---- SCIENCE WING (east): the meteorite has feelings ----
+    MRB({ ox: 15, oz: -10 }, 'x', 18, 7, (c, r) => (r === 4 && c % 3 === 1) ? 3 : 0, 0xcfd6de);
+    MRB({ ox: 15, oz: 10 }, 'x', 18, 7, (c, r) => (r === 4 && c % 3 === 1) ? 3 : 0, 0xcfd6de);
+    MRB({ ox: 33, oz: -10 }, 'z', 20, 7, () => 0, 0xcfd6de);
+    tileGridM(15, -10, 33, 10, 5.05);
+    (() => { const g = U.shadedBoxGeo(2.2, 0.5, 2.2); g.translate(24, 0.25, 0); rockGeos.push(g); })();
+    addCollider(22.9, 0, -1.1, 25.1, 0.5, 1.1, { step: true });
+    addProp('meteor', 24, 0.5, 0, 2.4, 1.9, 2.4, T.lavarock, 0xffffff, 300, {});
+    addProp('rocket', 29.5, 0, -6, 1.0, 4.4, 1.0, T.plain, 0xf0f4f8, 70, { metal: true });
+    addProp('case', 19, 0, -6.5, 0.9, 1.6, 0.9, T.glassTex, 0xdff2ff, 12, { glassy: true });
+    addProp('relic', 19, 0.15, -6.5, 0.45, 0.5, 0.45, T.plain, 0x9adcf0, 20, {});
+    addProp('case', 19, 0, 6.5, 0.9, 1.6, 0.9, T.glassTex, 0xdff2ff, 12, { glassy: true });
+    addProp('relic', 19, 0.15, 6.5, 0.45, 0.5, 0.45, T.plain, 0xc86a4a, 20, {});
+    addProp('desk', 30.5, 0, 6, 2.2, 1.0, 0.9, T.console, 0x3a4252, 40, {});
+    W.campSpots.push({ x: 29, z: 0, yaw: -Math.PI / 2 });
+
+    // ---- ART WING (north) ----
+    MRB({ ox: -14, oz: -26 }, 'x', 28, 7, (c, r) => (r === 4 && c % 4 === 2) ? 3 : 0, 0xe6dfd2);
+    MRB({ ox: -14, oz: -26 }, 'z', 14, 7, () => 0, 0xe6dfd2);
+    MRB({ ox: 14, oz: -26 }, 'z', 14, 7, () => 0, 0xe6dfd2);
+    tileGridM(-14, -26, 14, -12, 5.05);
+    for (const px9 of [-11, -6.5, -2, 2.5, 7, 11.5])
+      addProp('painting', px9, 2.1, -25.7, 1.8, 1.35, 0.14, T.painting, 0xffffff, 20, {});
+    addProp('painting', -13.7, 2.1, -19, 0.14, 1.35, 1.8, T.painting, 0xffffff, 20, {});
+    addProp('painting', 13.7, 2.1, -19, 0.14, 1.35, 1.8, T.painting, 0xffffff, 20, {});
+    addProp('moai', -9, 0, -15.5, 1.2, 2.4, 1.2, T.tiki, 0xcfd2d8, 140, {});
+    addProp('moai', 9, 0, -15.5, 1.2, 2.4, 1.2, T.tiki, 0xcfd2d8, 140, {});
+    for (const [vx, vz] of [[-5, -20], [0, -22], [5, -20], [0, -16]]) {
+      addProp('pedestal', vx, 0, vz, 0.65, 1.05, 0.65, T.plain, 0xe8e4da, 25, {});
+      addProp('vase', vx, 1.05, vz, 0.5, 0.7, 0.5, T.plain, U.pick([0x3f6fd0, 0xc23b2e, 0x3f8f5f]), 10, {});
+    }
+    addProp('bench', -7, 0, -18, 1.7, 0.55, 0.6, T.plain, 0x8a5f3f, 25, {});
+    addProp('bench', 7, 0, -18, 1.7, 0.55, 0.6, T.plain, 0x8a5f3f, 25, {});
+    W.campSpots.push({ x: 0, z: -24, yaw: 0 });
+
+    // ---- GIFT SHOP (flanks the entrance) ----
+    MRB({ ox: -14, oz: 12 }, 'z', 8, 6, (c, r) => (c >= 2 && c <= 3 && r <= 3) ? 1 : 0, 0xd9cdb8);
+    MRB({ ox: -14, oz: 20 }, 'x', 10, 6, () => 0, 0xd9cdb8);
+    MRB({ ox: -4, oz: 12 }, 'z', 8, 6, (c, r) => (c >= 2 && c <= 3 && r <= 3) ? 1 : 0, 0xd9cdb8);
+    tileGridM(-14, 12, -4, 20, 4.4);
+    addProp('desk', -9, 0, 18.4, 2.4, 1.05, 0.9, T.console, 0x3a4252, 50, {});
+    addProp('shelf', -12.8, 0, 15, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('plush', -12.5, 1.0, 15, 0.4, 0.4, 0.4, T.plain, 0x42d64a, 6, {});
+    addProp('plush', -9, 1.2, 18.4, 0.4, 0.4, 0.4, T.plain, 0xe8b83e, 6, {});
+    addProp('vend', -5.4, 0, 18.6, 1.2, 2.0, 0.9, T.container, 0xc23b4e, 60, { metal: true });
+    // security office (east flank)
+    MRB({ ox: 4, oz: 12 }, 'z', 8, 6, (c, r) => (c >= 2 && c <= 3 && r <= 3) ? 1 : 0, 0xd9cdb8);
+    MRB({ ox: 4, oz: 20 }, 'x', 10, 6, () => 0, 0xd9cdb8);
+    MRB({ ox: 14, oz: 12 }, 'z', 8, 6, () => 0, 0xd9cdb8);
+    tileGridM(4, 12, 14, 20, 4.4);
+    addProp('desk', 9, 0, 17.5, 2.4, 1.05, 0.9, T.console, 0x2e3a4a, 50, {});
+    addProp('camera', 8, 2.4, 12.6, 0.5, 0.4, 0.7, T.plain, 0x2e3138, 12, { metal: true });
+    addProp('cell', 12.6, 0, 18.6, 0.7, 1.1, 0.7, T.propane, 0xbfe8ff, 16, { metal: true });
+    W.campSpots.push({ x: 9, z: 16, yaw: Math.PI });
+
+    // helper: wing ceilings as shootable tiles
+    function tileGridM(x0, z0, x1, z1, topY) {
+      const w = x1 - x0, d = z1 - z0;
+      const nx = Math.max(1, Math.round(w / 4.6)), nz = Math.max(1, Math.round(d / 4.6));
+      const tw = w / nx, td = d / nz;
+      for (let i = 0; i < nx; i++)
+        for (let j = 0; j < nz; j++)
+          addProp('tile', x0 + (i + 0.5) * tw, topY - 0.26, z0 + (j + 0.5) * td, tw - 0.06, 0.26, td - 0.06, T.marble, 0xe8e4da, 60, { step: true });
+    }
+
+    // museum benches + lawn dressing outside
+    addProp('cart', 5, 0, 26, 1.9, 1.6, 1.1, T.plain, 0xe8b83e, 40, { metal: true });
+    addProp('bench', -6, 0, 24, 1.7, 0.55, 0.6, T.plain, 0x8a5f3f, 25, {});
+    addHedge(-16, 24, true); addHedge(16, 24, true);
+    buildTree(-24, 20); buildTree(24, 20); buildTree(-30, -20); buildTree(30, -20);
+    addProp('hydrant', 12, 0, 28, 0.5, 0.95, 0.5, T.hydrant, 0xffffff, 30, { metal: true });
+
+    W.spawnPoints = [
+      { x: -38, z: 0 }, { x: 38, z: 0 }, { x: -38, z: 24 }, { x: 38, z: 24 },
+      { x: -38, z: -24 }, { x: 38, z: -24 }, { x: 0, z: 30 }, { x: 0, z: -31 },
+      { x: -24, z: 15 }, { x: 24, z: 15 }, { x: -20, z: -30 }, { x: 20, z: -30 },
+    ];
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#3e8f2e';
+      x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#b3b7bb';
+      x.fillRect((ox - 35) * s, (oz - 29) * s, 70 * s, 52 * s);
+      x.fillStyle = '#c9cdd1';
+      x.fillRect((ox - 4) * s, (oz + 12) * s, 8 * s, 22 * s);
+    };
+    addSky(0x6cb8ee);
+  }
+
   function buildPalm(x, z, lean) {
     const dx = Math.cos(lean) * 0.3, dz = Math.sin(lean) * 0.3;
     let cx = x, cz = z, py = 0;
@@ -3316,6 +3516,7 @@ G.world = (function () {
     }
     updateCars(dt);
     W.mapClock += dt;
+    if (W.alarmT > 0) W.alarmT -= dt;
     if (W.mapUpdate) W.mapUpdate(dt);
     W.flushBatches();
   };

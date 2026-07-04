@@ -397,6 +397,48 @@ window.T = (function () {
     border(x, 64, 128, 5, 'rgba(90,96,110,0.8)');
     return tex(c);
   };
+  // ---------- museum surfaces ----------
+  T.marble = function () {
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#f2f0ea'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(150,148,140,0.4)'; x.lineWidth = 2;
+    for (let i = 0; i < 5; i++) { // veins
+      const px = U.rand(0, 128), py = U.rand(0, 128);
+      wob(x, px, py, px + U.rand(-60, 60), py + U.rand(-60, 60), 8, 9);
+    }
+    x.strokeStyle = 'rgba(120,118,110,0.25)'; x.lineWidth = 3;
+    wob(x, 2, 64, 126, 64, 6, 1.5);
+    border(x, 128, 128, 6, 'rgba(90,88,80,0.7)');
+    return tex(c);
+  };
+  T.painting = function () { // a fresh masterpiece every call
+    const { c, x } = cnv(128, 96);
+    x.fillStyle = U.pick(['#e8ddc8', '#cfd8e0', '#e0cfd4', '#d4e0cf']);
+    x.fillRect(0, 0, 128, 96);
+    const style = Math.floor(U.rand(0, 3));
+    if (style === 0) { // blob-ism
+      for (let i = 0; i < 6; i++)
+        blob(x, U.rand(20, 108), U.rand(16, 80), U.rand(8, 22), 8,
+          U.pick(['#c23b2e', '#2e6fc2', '#e8b83e', '#3f8f5f', '#8a4fd0']), 'rgba(30,30,30,0.6)', 2.5);
+    } else if (style === 1) { // sunset-over-cubes period
+      x.fillStyle = '#e8955e'; x.fillRect(8, 8, 112, 44);
+      blob(x, U.rand(40, 90), 34, 12, 8, '#f5d23e', 'rgba(120,60,10,0.6)', 2);
+      x.fillStyle = U.pick(['#4a5262', '#2e3a4a']);
+      for (let i = 0; i < 4; i++) x.fillRect(12 + i * 28, 52, 20, 36);
+    } else { // aggressive lines
+      x.lineWidth = 5;
+      for (let i = 0; i < 7; i++) {
+        x.strokeStyle = U.pick(['#c23b2e', '#20232a', '#e8b83e', '#2e6fc2']);
+        wob(x, U.rand(0, 128), U.rand(0, 96), U.rand(0, 128), U.rand(0, 96), 4, 6);
+      }
+    }
+    // ornate frame
+    x.strokeStyle = '#b8912e'; x.lineWidth = 9;
+    x.strokeRect(4, 4, 120, 88);
+    border(x, 128, 96, 4, 'rgba(90,70,10,0.9)');
+    return tex(c);
+  };
+
   // ---------- downtown surfaces ----------
   T.cityWall = function () {
     const { c, x } = cnv(128, 128);

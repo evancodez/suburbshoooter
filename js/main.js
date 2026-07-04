@@ -307,12 +307,16 @@
         player.onGround = false; // walked off ledge
       } else player.pos.y = floorY;
     }
-    // bonk: jumping under a floor/ceiling stops the jump instead of clipping
-    const ceilY = G.world.ceilingAt(player.pos.x, player.pos.z, player.pos.y, 0.3);
-    const headroom = player.crouching ? 1.35 : 1.88;
-    if (ceilY > floorY + headroom && player.pos.y + headroom > ceilY) {
-      player.pos.y = ceilY - headroom;
-      if (player.vel.y > 0) player.vel.y = 0;
+    // bonk: jumping under a floor/ceiling stops the jump instead of clipping.
+    // NOT while on a ladder — climbing past an overhanging ledge would pin you
+    // headroom-below it forever (the ladder's own top cap limits the climb)
+    if (!grabbing && player.ladderCd <= 0.1) {
+      const ceilY = G.world.ceilingAt(player.pos.x, player.pos.z, player.pos.y, 0.3);
+      const headroom = player.crouching ? 1.35 : 1.88;
+      if (ceilY > floorY + headroom && player.pos.y + headroom > ceilY) {
+        player.pos.y = ceilY - headroom;
+        if (player.vel.y > 0) player.vel.y = 0;
+      }
     }
     // standing in lava is exactly as bad as it sounds
     player.lavaAcc = (player.lavaAcc || 0) - dt;
@@ -323,12 +327,19 @@
     }
 
     // horizontal move + collide
-    player.pos.x += player.vel.x * dt;
-    player.pos.z += player.vel.z * dt;
+    if (grabbing) {
+      // hands on the ladder: hug the rail line and ignore wall shoves —
+      // a slab you're climbing past would otherwise "inside-push" you off
+      player.pos.x = U.damp(player.pos.x, lad.cx + lad.fx * 0.55, 12, dt);
+      player.pos.z = U.damp(player.pos.z, lad.cz + lad.fz * 0.55, 12, dt);
+    } else {
+      player.pos.x += player.vel.x * dt;
+      player.pos.z += player.vel.z * dt;
+    }
     const h = player.crouching ? 1.2 : 1.75;
     // airborne: raise the step limit so mid-jump you can drift over car
     // hoods/props and land on top instead of being shoved off sideways
-    G.world.collideCircle(player.pos, 0.38, player.pos.y, h, player.onGround ? 0.42 : 0.95);
+    if (!grabbing) G.world.collideCircle(player.pos, 0.38, player.pos.y, h, player.onGround ? 0.42 : 0.95);
     player.pos.x = U.clamp(player.pos.x, -G.world.bounds.x - 4, G.world.bounds.x + 4);
     player.pos.z = U.clamp(player.pos.z, -G.world.bounds.z - 4, G.world.bounds.z + 4);
 
