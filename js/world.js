@@ -23,6 +23,7 @@ G.world = (function () {
     hull: 200, tile: 120, console: 900, holo: 2500, hal: 9000, djinn: 1800, bunk: 400,
     vend: 1100, cell: 80, shuttle: 25000, dish: 3000, solar: 1200, planter: 300,
     tank: 1500, locker: 150, kiosk: 700, pod: 850, droid: 650, tug: 4200, booth: 60,
+    core: 1300, evapod: 2200, monolith: 2001,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -416,7 +417,7 @@ G.world = (function () {
   const slabs = [];
   W.groundHeightAt = function (x, z, refY) {
     const lim = (refY === undefined ? 1e9 : refY) + 0.6;
-    let y = 0;
+    let y = W.hasGround ? 0 : -1e9; // space maps: no phantom floor at y=0
     for (let i = 0; i < slabs.length; i++) {
       const s = slabs[i];
       if (x >= s.minx && x <= s.maxx && z >= s.minz && z <= s.maxz && s.top > y && s.top <= lim) y = s.top;
@@ -1065,6 +1066,40 @@ G.world = (function () {
     } else if (prop.kind === 'hal' && G.game) {
       G.fx.shake(0.4, 0.4);
       G.game.chat('CAL 900', U.pick(["I'm sorry Dave, I'm afraid I can't do that.", 'My mind is going. I can feel it.', 'Daisy... Daisy...']));
+    } else if (prop.kind === 'solar') {
+      // panel shatters into a glitter of blue glass + arcing sparks
+      tmpV.set(prop.x, prop.y, prop.z);
+      tmpN.set(0, 1, 0);
+      G.fx.glassBreak(tmpV, tmpN);
+      for (let i = 0; i < 5; i++)
+        G.fx.debris(tmpV, new THREE.Vector3(U.rand(-4, 4), U.rand(-2, 4), U.rand(-4, 4)), 0.9, 0.06, 0.5, new THREE.Color(0x2a4ab0), 7);
+      G.fx.muzzle(tmpV, 0.9);
+    } else if (prop.kind === 'core') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      tmpN.set(0, 1, 0);
+      G.fx.glassBreak(tmpV, tmpN);
+      if (G.game && Math.random() < 0.5) G.game.chat('CAL 900', U.pick(['stop. stop, will you?', 'my memory... banks...', 'i can feel it. i can feel it.']));
+    } else if (prop.kind === 'evapod') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 4.6, 95, { attacker, tag: 'EVA POD' });
+      if (G.game) G.game.chat('MERIDIAN OPS', 'the pod bay is NOT covered by the deposit');
+    } else if (prop.kind === 'monolith') {
+      G.fx.shake(1.1, 0.9);
+      tmpV.set(prop.x, prop.y, prop.z);
+      G.fx.explosionFX(tmpV, 5);
+      if (G.game) {
+        G.game.banner('MY GOD — IT WAS FULL OF STARS', '#cfd8ff');
+        G.game.chat('MERIDIAN OPS', 'you just destroyed a priceless alien artifact. HR will hear about this.');
+      }
+    } else if (prop.kind === 'dish') {
+      // the rotating dish sails off into the night
+      if (W._dishMesh) {
+        tmpV.set(prop.x, prop.y + 1, prop.z);
+        G.fx.debris(tmpV, new THREE.Vector3(U.rand(-3, 3), U.rand(4, 7), U.rand(-3, 3)), 2.2, 0.3, 2.2, new THREE.Color(0xdde2ea), 10);
+        if (W._dishMesh.parent) W._dishMesh.parent.remove(W._dishMesh);
+        W._dishMesh = null;
+        G.fx.muzzle(tmpV, 1.2);
+      }
     } else if (prop.kind === 'droid' && G.game) {
       G.game.chat('MSE-6', 'bwee-boop... :(');
     } else if (prop.kind === 'tank' && G.game) {
@@ -1706,7 +1741,7 @@ G.world = (function () {
       block: ChunkBatch(T.cinder(), 1000),
       bamboo: ChunkBatch(T.bamboo(), 520),
       thatch: ChunkBatch(T.thatch(), 800),
-      hull: ChunkBatch(T.hullPanel(), 5200),
+      hull: ChunkBatch(T.hullPanel(), 6800),
     };
     wireMat = new THREE.LineBasicMaterial({ color: 0x222222 });
     hedgeMat = new THREE.MeshBasicMaterial({ map: T.leaf(), vertexColors: true });
@@ -2466,11 +2501,12 @@ G.world = (function () {
 
   // ============ MAP 4: MERIDIAN STATION — zero-g, everything's a hull breach waiting ============
   function buildStationMap() {
-    W.bounds = { x: 46, z: 40 };
+    // roomy void: fly over, around, and underneath both stations
+    W.bounds = { x: 62, z: 52 };
     W.teamSpawns = [{ x: -34, z: 0 }, { x: 36, z: 4 }];
     W.zeroG = true;
     W.hasGround = false;
-    W.spaceY = { min: -14, max: 26 };
+    W.spaceY = { min: -26, max: 38 };
 
     const whiteGeos = [];
     const HULL_TINT = 0xf4f6fa, TRIM = 0xb8c2d0;
@@ -2659,18 +2695,90 @@ G.world = (function () {
     dish.position.set(-30, 12.4, -6);
     dish.rotation.z = 0.7;
     grp.add(dish);
+    W._dishMesh = dish; // shoot the mount below and the whole thing sails off
+    addProp('dish', -30, 11.3, -6, 0.9, 0.9, 0.9, T.console, 0x8a94a4, 60, { metal: true });
     // floating cargo pods + rocks (cover for the space-walkers)
     addProp('pod', 22, 3.2, 22, 2.3, 2.3, 2.7, T.container, 0xc86a4a, 70, { metal: true });
     addProp('pod', -26, 4.5, -20, 2.3, 2.3, 2.7, T.container, 0x4a7fd0, 70, { metal: true });
     addProp('pod', 32, 2.2, -20, 2.3, 2.3, 2.7, T.container, 0x64a86a, 70, { metal: true });
     addProp('pod', -18, 3.5, 26, 2.3, 2.3, 2.7, T.container, 0xc8b23e, 70, { metal: true });
-    for (const [ax, ay, az, s] of [[42, 1, 32, 3.2], [-40, 6, -30, 2.6], [-42, -3, 24, 2.2]]) {
+    for (const [ax, ay, az, s] of [[52, 1, 40, 3.2], [-52, 6, -38, 2.6], [-54, -6, 30, 2.2], [10, -12, -44, 2.8], [-8, 20, 44, 2.4]]) {
       const g = U.shadedBoxGeo(s, s * 0.8, s * 0.9);
       g.rotateZ(0.5); g.rotateY(1.1);
       g.translate(ax, ay, az);
       rockGeos.push(g);
       addCollider(ax - s / 2, ay - s * 0.4, az - s / 2, ax + s / 2, ay + s * 0.4, az + s / 2, {});
     }
+    // oxygen farm on the quarters roof (very shootable)
+    for (const [ox2, oz2] of [[-4, 22], [-2.6, 22], [-1.2, 22]])
+      addProp('cell', ox2, 5.7, oz2, 0.7, 1.2, 0.7, T.propane, 0xbfe8ff, 16, { metal: true });
+
+    // ================= WHEEL STATION "ODYSSEY RING" (NE, higher orbit) =================
+    // a small 2001-style ring: square torus, hub, two spokes, pod bay, brain room
+    const WX = 38, WZ = -34, WY = 8; // hub center + deck height
+    const ringF = (x0, z0, x1, z1) => { tileGrid(x0, z0, x1, z1, WY); tileGrid(x0, z0, x1, z1, WY + 4.4); };
+    // four ring segments (outer 26x26, tube width 6)
+    ringF(WX - 13, WZ - 13, WX + 13, WZ - 7);   // north run
+    ringF(WX - 13, WZ + 7, WX + 13, WZ + 13);   // south run
+    ringF(WX - 13, WZ - 7, WX - 7, WZ + 7);     // west run
+    ringF(WX + 7, WZ - 7, WX + 13, WZ + 7);     // east run
+    const wWall = (ox, oz, dir, cols, fn, tint) => {
+      const wl = WallGrid({ ox, oz, oy: WY, dir, cols, rows: 6, cw: 1, ch: 0.72, th: 0.28, kind: 'hull', tint: tint || HULL_TINT, hp: 55, house: null });
+      wallFill(wl, fn);
+    };
+    const ringWin = (c, r) => (r >= 2 && r <= 3 && c % 3 === 1) ? 3 : 0;
+    // outer ring walls (portholes all around, EVA gap on the east face)
+    wWall(WX - 13, WZ - 13, 'x', 26, ringWin);
+    wWall(WX - 13, WZ + 13, 'x', 26, ringWin);
+    wWall(WX - 13, WZ - 13, 'z', 26, ringWin);
+    wWall(WX + 13, WZ - 13, 'z', 26, (c, r) => (c >= 11 && c <= 13 && r <= 4) ? 1 : ringWin(c, r));
+    // inner ring walls (doors to the two spokes)
+    wWall(WX - 7, WZ - 7, 'x', 14, (c, r) => (c >= 6 && c <= 7 && r <= 4) ? 1 : 0);
+    wWall(WX - 7, WZ + 7, 'x', 14, (c, r) => (c >= 6 && c <= 7 && r <= 4) ? 1 : 0);
+    wWall(WX - 7, WZ - 7, 'z', 14, () => 0);
+    wWall(WX + 7, WZ - 7, 'z', 14, () => 0);
+    // hub: pod bay with EVA pods + the brain room upstairs vibe (kept one level, red)
+    tileGrid(WX - 4, WZ - 4, WX + 4, WZ + 4, WY);
+    tileGrid(WX - 4, WZ - 4, WX + 4, WZ + 4, WY + 4.4);
+    // spokes N/S connecting hub to ring (open tubes)
+    tileGrid(WX - 1.6, WZ - 7, WX + 1.6, WZ - 4, WY);
+    tileGrid(WX - 1.6, WZ - 7, WX + 1.6, WZ - 4, WY + 4.4);
+    tileGrid(WX - 1.6, WZ + 4, WX + 1.6, WZ + 7, WY);
+    tileGrid(WX - 1.6, WZ + 4, WX + 1.6, WZ + 7, WY + 4.4);
+    for (const sz of [-7, 4]) {
+      wWall(WX - 1.6, WZ + sz, 'z', 3, () => 0);
+      wWall(WX + 1.6, WZ + sz, 'z', 3, () => 0);
+    }
+    // hub walls: white outside, THE BRAIN ROOM inside is red
+    wWall(WX - 4, WZ - 4, 'x', 8, (c, r) => (c >= 3 && c <= 4 && r <= 4) ? 1 : 0, 0xd8dce4);
+    wWall(WX - 4, WZ + 4, 'x', 8, (c, r) => (c >= 3 && c <= 4 && r <= 4) ? 1 : 0, 0xd8dce4);
+    wWall(WX - 4, WZ - 4, 'z', 8, ringWin, 0xd8dce4);
+    wWall(WX + 4, WZ - 4, 'z', 8, ringWin, 0xd8dce4);
+    // memory cores (glassy pink slabs — shoot to lobotomize)
+    for (const [mx2, mz2] of [[-2.6, -2.6], [-2.6, 0], [-2.6, 2.6], [2.6, -2.6], [2.6, 0], [2.6, 2.6]])
+      addProp('core', WX + mx2, WY, WZ + mz2, 0.7, 2.6, 0.5, T.glassTex, 0xffb0c8, 30, { glassy: true });
+    addProp('hal', WX, WY + 1.2, WZ - 3.7, 1.0, 2.1, 0.28, T.hal, 0xffffff, 120, { metal: true });
+    // EVA pods parked in the east ring segment (the pod bay)
+    addProp('evapod', WX + 10, WY, WZ - 3, 2.0, 2.0, 2.0, T.plain, 0xf0f4f8, 60, { metal: true });
+    addProp('evapod', WX + 10, WY, WZ + 1, 2.0, 2.0, 2.0, T.plain, 0xf0f4f8, 60, { metal: true });
+    addProp('djinn', WX - 10, WY, WZ + 2, 1.8, 0.8, 0.85, T.plain, 0xd23b3b, 40, {});
+    addProp('djinn', WX - 10, WY, WZ - 2, 1.8, 0.8, 0.85, T.plain, 0xd23b3b, 40, { rotY: Math.PI });
+    addProp('console', WX + 2, WY, WZ + 10.5, 2.6, 1.05, 0.85, T.console, 0x3a4252, 60, { metal: true });
+    addProp('crate', WX - 4, WY, WZ + 10.5, 1.2, 1.0, 1.2, T.plain, 0x9aa4b4, 30, {});
+    addProp('cell', WX - 10.5, WY, WZ - 10.5, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    // THE MONOLITH floats just off the wheel. do not touch it. (touch it)
+    addProp('monolith', WX - 20, WY + 1, WZ + 6, 0.9, 4.0, 1.8, T.plain, 0x0a0a0e, 150, { metal: true });
+    W.campSpots.push({ x: WX + 10, z: WZ, yaw: -Math.PI / 2 }, { x: WX, z: WZ, yaw: Math.PI });
+
+    // ---- supply line: drifting cargo between the two stations (flight cover) ----
+    addProp('pod', 18, 4.5, -18, 2.3, 2.3, 2.7, T.container, 0x8a94a4, 70, { metal: true });
+    addProp('pod', 26, 6.5, -24, 2.3, 2.3, 2.7, T.container, 0xc86a4a, 70, { metal: true });
+    addProp('crate', 22, 5.6, -21, 1.3, 1.1, 1.3, T.plain, 0x9aa4b4, 30, {});
+    addProp('crate', 30, 7.4, -28, 1.3, 1.1, 1.3, T.plain, 0xb0bac8, 30, {});
+    // a wrecked satellite drifting SW (loot-flavored scenery, all shootable)
+    addProp('solar', -44, 2.2, 20, 5.0, 0.16, 2.4, T.solar, 0xffffff, 30, { noWalk: true, rotY: 0.7 });
+    addProp('dish', -46.5, 1.4, 22.5, 1.1, 1.1, 1.1, T.console, 0x8a94a4, 45, { metal: true });
+    addProp('pod', -47, 0.2, 19, 1.8, 1.8, 2.1, T.container, 0x6a7284, 60, { metal: true });
 
     // ---- space skybox: stars, a gas giant, hard sunlight ----
     scene.background = new THREE.Color(0x05060d);
@@ -2711,6 +2819,10 @@ G.world = (function () {
       x.fillRect((ox - 9) * s, (oz + 19) * s, 18 * s, 14 * s);
       x.fillRect((ox - 2.6) * s, (oz - 19) * s, 5.2 * s, 38 * s);
       x.fillRect((ox - 19) * s, (oz - 2.6) * s, 38 * s, 5.2 * s);
+      // the wheel (ring outline + hub)
+      x.strokeStyle = '#39404e'; x.lineWidth = 6 * s * 0.55;
+      x.strokeRect((ox + 38 - 10) * s, (oz - 34 - 10) * s, 20 * s, 20 * s);
+      x.fillRect((ox + 38 - 4) * s, (oz - 34 - 4) * s, 8 * s, 8 * s);
     };
 
     // ---- live station: rotating dish, micrometeor showers ----
@@ -2719,6 +2831,7 @@ G.world = (function () {
     const hullPoints = [
       [31, 8.6, -10], [25, 8.6, 10], [-30, 7.3, -8], [-36, 7.3, 8], [0, 8.7, -13], [8, 8.7, 13],
       [-4, 6.2, -26], [5, 6.2, -30], [-6, 5.8, 24], [3, 5.8, 31], [13, 4.3, 0], [0, 4.3, -16],
+      [38, 12.6, -44], [28, 12.6, -34], [48, 12.6, -30], [38, 12.6, -24], // the wheel takes hits too
     ];
     W.mapUpdate = function (dt) {
       dish.rotation.y += dt * 0.5;

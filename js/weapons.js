@@ -456,6 +456,11 @@ G.arsenal = (function () {
         b.impactY = hit.kind !== 'none' ? hit.point.y : gy;
       }
       const iy = b.impactY !== undefined ? b.impactY : gy;
+      if (b.y < -40) { // sailed past the station into the void
+        G.scene.remove(b.mesh);
+        A.bombs.splice(i, 1);
+        continue;
+      }
       if (b.y <= iy + 0.3) {
         G.scene.remove(b.mesh);
         A.bombs.splice(i, 1);

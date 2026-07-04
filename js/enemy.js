@@ -844,7 +844,10 @@ G.botMgr = (function () {
       if (tgtValid(bot) && (bot.state === 'combat' || bot.state === 'hunt' || bot.state === 'cover'))
         wantY = t.pos.y + ((bot.idx % 3) - 1) * 0.9;
       else if (bot.state === 'investigate') wantY = bot.lastKnown.y || 0;
-      else wantY = G.world.standHeightAt(bp.x, bp.z, bp.y + 0.5);
+      else {
+        wantY = G.world.standHeightAt(bp.x, bp.z, bp.y + 0.5);
+        if (wantY < -100) wantY = 0; // open void below: cruise at main-deck altitude
+      }
       wantY = U.clamp(wantY, G.world.spaceY.min + 2, G.world.spaceY.max - 2);
       if (Math.abs(wantY - bp.y) > 0.06) {
         bp.y += U.clamp(wantY - bp.y, -3.4 * dt, 3.4 * dt);
