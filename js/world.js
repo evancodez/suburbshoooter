@@ -854,12 +854,14 @@ G.world = (function () {
   // ============ collision resolve (circle vs world) ============
   W.collideCircle = function (pos, radius, feetY, height, stepLimit) {
     const step = stepLimit || 0.42;
-    for (let iter = 0; iter < 2; iter++) {
+    for (let iter = 0; iter < 3; iter++) {
       // colliders
       for (let i = 0; i < colliders.length; i++) {
         const c = colliders[i];
         if (c.gone || c.noWalk) continue;
-        if (c.maxy - feetY <= step) continue;        // step-up / clear while jumping
+        // stairs/platforms are forgiving: skipping up to two steps at once never
+        // triggers a horizontal shove (those shoves could eject you through walls)
+        if (c.maxy - feetY <= (c.step ? Math.max(step, 1.0) : step)) continue;
         if (c.miny > feetY + 1.25) continue;         // overhead: that's a ceiling (ceilingAt), not a wall
         const nx = U.clamp(pos.x, c.minx, c.maxx);
         const nz = U.clamp(pos.z, c.minz, c.maxz);
@@ -1594,7 +1596,7 @@ G.world = (function () {
       g.translate(x, y, z);
       list.push(g);
     }
-    const grab = 0.62;
+    const grab = 0.72;
     const fx = face === 'e' ? 1 : face === 'w' ? -1 : 0;
     const fz = face === 's' ? 1 : face === 'n' ? -1 : 0;
     ladders.push({
@@ -1605,6 +1607,13 @@ G.world = (function () {
       baseY, topY,
       cx: x, cz: z, fx, fz, // rail center + which side you hang on (bots use these)
     });
+    // the rails are solid: you climb ladders, you don't stroll through them.
+    // step+noShoot keeps it out of bot nav, raycasts and floor queries, and the
+    // low cap (topY+0.4) means cresting still clears it
+    addCollider(
+      x - (along === 'x' ? 0.55 : 0.09), baseY, z - (along === 'z' ? 0.55 : 0.09),
+      x + (along === 'x' ? 0.55 : 0.09), topY + 0.4, z + (along === 'z' ? 0.55 : 0.09),
+      { noShoot: true, step: true });
   }
   W.ladders = ladders;
 
@@ -3006,8 +3015,8 @@ G.world = (function () {
     }
     // stairs: switchback flights up the west edge
     for (let f = 0; f < 5; f++) {
-      if (f % 2 === 0) buildStairs(-42.2, 12.5, 0, 1, 2.3, 10, 0.36, 0.52, 3.6 * f);
-      else buildStairs(-42.2, 33.5, 0, -1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+      if (f % 2 === 0) buildStairs(-42.3, 12.5, 0, 1, 3.2, 10, 0.36, 0.52, 3.6 * f);
+      else buildStairs(-42.3, 33.5, 0, -1, 3.2, 10, 0.36, 0.52, 3.6 * f);
     }
     // interior office clutter + plywood partitions (floors 1-3)
     for (let L = 1; L <= 3; L++) {
@@ -3060,8 +3069,8 @@ G.world = (function () {
       }
     }
     for (let f = 0; f < 4; f++) {
-      if (f % 2 === 0) buildStairs(-42.2, -35.5, 0, 1, 2.3, 10, 0.36, 0.52, 3.6 * f);
-      else buildStairs(-42.2, -18.5, 0, -1, 2.3, 10, 0.36, 0.52, 3.6 * f);
+      if (f % 2 === 0) buildStairs(-42.3, -35.5, 0, 1, 3.2, 10, 0.36, 0.52, 3.6 * f);
+      else buildStairs(-42.3, -18.5, 0, -1, 3.2, 10, 0.36, 0.52, 3.6 * f);
     }
     for (let L = 1; L <= 3; L++) {
       const y = 3.6 * L;

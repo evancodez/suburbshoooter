@@ -920,12 +920,26 @@
     });
   }
   selGroup('diffSel'); selGroup('mapSel'); selGroup('layoutSel');
+  // the controls card follows whichever layout is selected
+  function renderControls() {
+    const L2 = (settings.layout || 1) === 2;
+    const rows = [
+      ['WASD', 'move'], ['W W', 'double-tap: sprint'],
+      ['MOUSE', 'aim · LMB fire'], [L2 ? 'SHIFT' : 'RMB', 'aim down sights'],
+      ['SPACE', 'jump / climb ladders'], [L2 ? 'C' : 'SHIFT / C', 'crouch (+sprint = slide)'],
+      [L2 ? 'E' : 'G', 'grenade'], ['F', 'knife'],
+      ['R', 'reload'], ['1-4', 'weapons (or wheel)'],
+      ['5', 'airstrike (5 streak)'], ['ESC', 'pause'],
+    ];
+    $('controlsList').innerHTML = rows.map(([k, txt]) => `<div><span class="key">${k}</span>${txt}</div>`).join('');
+  }
   $('layoutSel').addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) { settings.layout = parseInt(b.dataset.v); saveSettings(); }
+    if (b) { settings.layout = parseInt(b.dataset.v); saveSettings(); renderControls(); }
   });
   document.querySelectorAll('#layoutSel button').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.v) === (settings.layout || 1)));
   if (!document.querySelector('#layoutSel .sel')) document.querySelector('#layoutSel button[data-v="1"]').classList.add('sel');
+  renderControls();
   // preselect from settings
   document.querySelectorAll('#diffSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.diff));
   if (!document.querySelector('#diffSel .sel')) document.querySelector('#diffSel button[data-v="normal"]').classList.add('sel');

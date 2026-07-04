@@ -206,10 +206,20 @@
   .sliderrow input { flex: 1; accent-color: #42d64a; }
   .sliderrow .val { width: 52px; text-align: right; }
   .controls {
-    font-size: 13.5px; color: #444; line-height: 1.55;
-    columns: 2; column-gap: 26px; margin-top: 6px;
+    font-size: 13px; color: #444;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 5px 18px; margin-top: 6px;
   }
-  .controls b { color: #111; }
+  .controls .key {
+    display: inline-block; min-width: 34px; text-align: center;
+    background: #fff; color: #111; font-weight: bold; font-size: 12px;
+    border: 2px solid #111; border-radius: 5px;
+    padding: 1px 6px; margin-right: 7px;
+    box-shadow: 1px 2px 0 rgba(0,0,0,0.3);
+  }
+  /* five maps need two rows */
+  #mapSel, #lobbyMap { flex-wrap: wrap; }
+  #mapSel button, #lobbyMap button { font-size: 13.5px; padding: 5px 10px; }
   #deathKiller { color: #ff5544; }
   .deathbig { font-size: 46px; font-weight: bold; color: #ff5544; text-shadow: 3px 3px 0 #111; transform: rotate(-1deg); }
   .deathsub { font-size: 20px; color: #fff; text-shadow: 2px 2px 0 #111; font-weight: bold; }
@@ -339,21 +349,7 @@
     <div class="sliderrow">VOL <input type="range" id="volSlider" min="0" max="1" step="0.05"><span class="val" id="volSliderVal">80%</span></div>
     <div class="sliderrow">FOV <input type="range" id="fovSlider" min="60" max="105" step="1"><span class="val" id="fovSliderVal">78°</span></div>
     <h3>CONTROLS</h3>
-    <div class="controls">
-      <div><b>WASD</b> move</div>
-      <div><b>MOUSE</b> aim / <b>LMB</b> fire</div>
-      <div><b>RMB</b> aim down sights</div>
-      <div><b>W W</b> double-tap: sprint</div>
-      <div><b>SPACE</b> jump</div>
-      <div><b>L1: SHIFT/C</b> crouch, <b>G</b> nade</div>
-      <div><b>L2: SHIFT</b> = ADS, <b>C</b> crouch, <b>E</b> nade</div>
-      <div><b>R</b> reload</div>
-      <div><b>1/2/3/4</b> + wheel: weapons</div>
-      <div><b>F</b> knife</div>
-      <div><b>5</b> airstrike (5 streak)</div>
-      <div><b>SPACE</b> at a ladder: climb</div>
-      <div><b>ESC</b> pause</div>
-    </div>
+    <div class="controls" id="controlsList"></div>
   </div>
   <div class="tip">everything is destructible. property damage is encouraged.</div>
 </div>
