@@ -607,8 +607,9 @@ G.botMgr = (function () {
     const dist = tgtValid(bot) ? U.dist2d(bp.x, bp.z, t.pos.x, t.pos.z) : 99;
 
     // prey is up on a deck somewhere: find a ladder and go get them
-    // (any upward ladder works — chained climbs re-trigger on the next floor)
-    if (!bot.climb && bot.state !== 'ladder' && bot.ladderCd <= 0 && tgtValid(bot) &&
+    // (any upward ladder works — chained climbs re-trigger on the next floor;
+    //  zero-g crews just fly, no ladders needed)
+    if (!G.world.zeroG && !bot.climb && bot.state !== 'ladder' && bot.ladderCd <= 0 && tgtValid(bot) &&
         (bot.state === 'hunt' || bot.state === 'investigate' || (bot.state === 'combat' && !bot.canSee)) &&
         t.pos.y - bp.y > 2.2 && dist < 26) {
       let bestL = null, bestScore = 26;
@@ -837,7 +838,25 @@ G.botMgr = (function () {
     } else {
       bot.animPhase = U.damp(bot.animPhase, Math.round(bot.animPhase / Math.PI) * Math.PI, 8, dt);
     }
-    bp.y = G.world.standHeightAt(bp.x, bp.z, bp.y);
+    if (G.world.zeroG) {
+      // jetpack altitude: fly at the fight's height, cruise at deck level otherwise
+      let wantY;
+      if (tgtValid(bot) && (bot.state === 'combat' || bot.state === 'hunt' || bot.state === 'cover'))
+        wantY = t.pos.y + ((bot.idx % 3) - 1) * 0.9;
+      else if (bot.state === 'investigate') wantY = bot.lastKnown.y || 0;
+      else wantY = G.world.standHeightAt(bp.x, bp.z, bp.y + 0.5);
+      wantY = U.clamp(wantY, G.world.spaceY.min + 2, G.world.spaceY.max - 2);
+      if (Math.abs(wantY - bp.y) > 0.06) {
+        bp.y += U.clamp(wantY - bp.y, -3.4 * dt, 3.4 * dt);
+        if (bot.speedNow < 1) { bot.speedNow = 1; bot.animPhase += dt * 3; }
+      }
+      const zfl = G.world.standHeightAt(bp.x, bp.z, bp.y);
+      if (bp.y < zfl) bp.y = zfl;
+      const zce = G.world.ceilingAt(bp.x, bp.z, bp.y, 0.3);
+      if (zce > zfl + 1.9 && bp.y + 1.9 > zce) bp.y = zce - 1.9;
+    } else {
+      bp.y = G.world.standHeightAt(bp.x, bp.z, bp.y);
+    }
 
     // stuck: repath → try a different route → vault/bash as a last resort
     bot.stuckT += dt;

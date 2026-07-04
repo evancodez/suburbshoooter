@@ -148,6 +148,7 @@
 
   // ---------- player update ----------
   const wishDir = new THREE.Vector3();
+  const tmpJet = new THREE.Vector3();
   function updatePlayer(dt) {
     player.spawnProtectT -= dt;
     if (!player.alive) return;
@@ -156,6 +157,8 @@
     const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft || keys.ShiftRight;
     const fwd = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
     const str = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+
+    if (G.world.zeroG) { updateZeroG(dt, sprintKey, crouchKey); return; }
 
     // start slide
     const speedNow = Math.hypot(player.vel.x, player.vel.z);
@@ -187,6 +190,69 @@
     player.vel.x = U.damp(player.vel.x, wishDir.x * speed, accel * 0.4, dt);
     player.vel.z = U.damp(player.vel.z, wishDir.z * speed, accel * 0.4, dt);
 
+    runGroundedPhysics(dt);
+  }
+
+  // ---------- zero-g jetpack (space maps) ----------
+  function updateZeroG(dt, sprintKey, crouchKey) {
+    {
+      player.crouching = false;
+      player.slideT = -1;
+      player.sprinting = false; // boost never blocks the trigger
+      const boost = sprintKey ? 1.65 : 1;
+      const acc = 13 * boost;
+      // thrust along the camera: W flies where you look, strafe stays level,
+      // Space/Shift give straight up/down
+      const cp = Math.cos(player.pitch), sp2 = Math.sin(player.pitch);
+      const fwdX = -Math.sin(player.yaw) * cp, fwdY = sp2, fwdZ = -Math.cos(player.yaw) * cp;
+      const rgtX = -Math.sin(player.yaw - Math.PI / 2), rgtZ = -Math.cos(player.yaw - Math.PI / 2);
+      const fw = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+      const st2 = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+      let tx = fwdX * fw + rgtX * st2;
+      let ty = fwdY * fw;
+      let tz = fwdZ * fw + rgtZ * st2;
+      if (keys.Space) ty += 1;
+      if (crouchKey) ty -= 1;
+      const tl = Math.hypot(tx, ty, tz);
+      if (tl > 0.01) {
+        player.vel.x += (tx / tl) * acc * dt;
+        player.vel.y += (ty / tl) * acc * dt;
+        player.vel.z += (tz / tl) * acc * dt;
+        if (G.fx && Math.random() < dt * 8) { // little jet puffs
+          tmpJet.set(player.pos.x - player.vel.x * 0.08, player.pos.y + 0.5, player.pos.z - player.vel.z * 0.08);
+          G.fx.rocketTrail(tmpJet);
+        }
+      }
+      // drag keeps it flyable, not slippery-ice
+      const drag = Math.pow(0.22, dt);
+      player.vel.multiplyScalar(drag);
+      const vmax = 9.5 * boost;
+      const vl = player.vel.length();
+      if (vl > vmax) player.vel.multiplyScalar(vmax / vl);
+      // integrate + collide
+      player.pos.x += player.vel.x * dt;
+      player.pos.z += player.vel.z * dt;
+      player.pos.y += player.vel.y * dt;
+      const zgFloor = G.world.standHeightAt(player.pos.x, player.pos.z, player.pos.y);
+      if (player.pos.y < zgFloor && player.vel.y < 0) { player.pos.y = zgFloor; player.vel.y = 0; }
+      const zgCeil = G.world.ceilingAt(player.pos.x, player.pos.z, player.pos.y, 0.3);
+      if (zgCeil > zgFloor + 1.88 && player.pos.y + 1.88 > zgCeil) { player.pos.y = zgCeil - 1.88; if (player.vel.y > 0) player.vel.y = 0; }
+      player.onGround = player.pos.y <= zgFloor + 0.05;
+      G.world.collideCircle(player.pos, 0.38, player.pos.y, 1.75, 0.28);
+      player.pos.x = U.clamp(player.pos.x, -G.world.bounds.x - 4, G.world.bounds.x + 4);
+      player.pos.z = U.clamp(player.pos.z, -G.world.bounds.z - 4, G.world.bounds.z + 4);
+      player.pos.y = U.clamp(player.pos.y, G.world.spaceY.min, G.world.spaceY.max);
+      player.eyeH = U.damp(player.eyeH, 1.62, 12, dt);
+      player.regenT += dt;
+      if (player.regenT > 4.2 && player.hp < 100) player.hp = Math.min(100, player.hp + 40 * dt);
+      if (player.multiT > 0) { player.multiT -= dt; if (player.multiT <= 0) player.multiN = 0; }
+      player.uavT -= dt;
+    }
+  }
+
+  // ---------- grounded physics (every map that still has a floor) ----------
+  function runGroundedPhysics(dt) {
+    const crouchKey = keys.KeyC || keys.ControlLeft || keys.ShiftLeft || keys.ShiftRight;
     // gravity / jump / ladders / map hazards
     const floorY = G.world.standHeightAt(player.pos.x, player.pos.z, player.pos.y);
     player.ladderCd = Math.max(0, (player.ladderCd || 0) - dt);
@@ -568,6 +634,9 @@
     G.audio.setVolume(settings.vol);
     lockPointer();
     staticMapDirty = true;
+    if (G.world.zeroG) setTimeout(() => {
+      if (game.state === 'playing') game.banner('ZERO-G — JETPACK ONLINE · SPACE up · SHIFT down', '#7fd4ff');
+    }, 800);
   }
   function numVal(id, def, min, max) {
     const v = Math.round(parseFloat($(id).value));
@@ -723,7 +792,7 @@
   const MMOX = 72, MMOZ = 58;
   mmStatic.width = Math.ceil(144 * MMS); mmStatic.height = Math.ceil(116 * MMS);
   let staticMapDirty = true, staticMapT = 0;
-  const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b' };
+  const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b', hull: '#e8ecf2' };
   function redrawStaticMap() {
     const x = mmStatic.getContext('2d');
     const w2m = (wx, wz) => [(wx + MMOX) * MMS, (wz + MMOZ) * MMS];

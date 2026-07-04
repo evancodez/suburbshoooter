@@ -19,6 +19,10 @@ G.world = (function () {
     // volcano island
     bamboo: 60, thatch: 40, canoe: 700, chest: 5000, surfboard: 350, torch: 25, drum: 90,
     tiki: 1500, melon: 15, moai: 8000, stone: 400,
+    // meridian station
+    hull: 200, tile: 120, console: 900, holo: 2500, hal: 9000, djinn: 1800, bunk: 400,
+    vend: 1100, cell: 80, shuttle: 25000, dish: 3000, solar: 1200, planter: 300,
+    tank: 1500, locker: 150, kiosk: 700, pod: 850, droid: 650, tug: 4200, booth: 60,
   };
   W.bill = {}; W.billTotal = 0;
   W.addMoney = function (kind) {
@@ -696,8 +700,8 @@ G.world = (function () {
     let best = maxDist;
     hitObj.kind = 'none';
     hitObj.t = maxDist;
-    // ground
-    if (rd.y < -1e-6) {
+    // ground (space maps have none — shots sail on into the void)
+    if (W.hasGround && rd.y < -1e-6) {
       const t = -ro.y / rd.y;
       if (t >= 0 && t < best) {
         best = t; hitObj.kind = 'ground';
@@ -1021,7 +1025,9 @@ G.world = (function () {
   function addProp(kind, x, y, z, sx, sy, sz, texFn, tint, hp, opts) {
     const mat = new THREE.MeshBasicMaterial({ map: texFn(), vertexColors: true });
     if (tint) mat.color = new THREE.Color(tint);
+    if (opts && opts.glassy) { mat.transparent = true; mat.opacity = 0.55; }
     const mesh = new THREE.Mesh(U.shadedBoxGeo(sx, sy, sz), mat);
+    if (opts && opts.glassy) mesh.renderOrder = 3;
     mesh.position.set(x, y + sy / 2, z);
     if (opts && opts.rotY) mesh.rotation.y = opts.rotY;
     grp.add(mesh);
@@ -1053,6 +1059,16 @@ G.world = (function () {
     } else if (prop.kind === 'barrel' || prop.kind === 'drum') {
       tmpV.set(prop.x, prop.y, prop.z);
       W.explode(tmpV, 5.8, 125, { attacker, tag: 'BARREL' });
+    } else if (prop.kind === 'cell') { // fuel cells go up like small suns
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 6.2, 130, { attacker, tag: 'FUEL CELL' });
+    } else if (prop.kind === 'hal' && G.game) {
+      G.fx.shake(0.4, 0.4);
+      G.game.chat('CAL 900', U.pick(["I'm sorry Dave, I'm afraid I can't do that.", 'My mind is going. I can feel it.', 'Daisy... Daisy...']));
+    } else if (prop.kind === 'droid' && G.game) {
+      G.game.chat('MSE-6', 'bwee-boop... :(');
+    } else if (prop.kind === 'tank' && G.game) {
+      G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 40, kind: 'water', dur: 1.4 });
     } else if (prop.kind === 'watertank') {
       // burst main: a short monsoon
       G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: 70, kind: 'water', dur: 2.6 });
@@ -1666,9 +1682,13 @@ G.world = (function () {
     { id: 'suburbs', name: 'SUBURBS' },
     { id: 'construction', name: 'THE SITE' },
     { id: 'island', name: 'VOLCANO ISLAND' },
+    { id: 'station', name: 'MERIDIAN STATION' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
+  W.zeroG = false;            // jetpack physics for players + bots
+  W.hasGround = true;         // false in space: no invisible floor at y=0
+  W.spaceY = { min: -14, max: 30 }; // vertical play limits in zero-g
 
   W.build = function (sc) {
     scene = sc;
@@ -1680,12 +1700,13 @@ G.world = (function () {
       garage: ChunkBatch(T.garageDoor(), 160),
       fence: ChunkBatch(T.fence(), 900),
       frame: ChunkBatch(T.fence(), 420),
-      glass: ChunkBatch(T.glassTex(), 360, { transparent: true, opacity: 0.62, renderOrder: 4 }),
+      glass: ChunkBatch(T.glassTex(), 900, { transparent: true, opacity: 0.62, renderOrder: 4 }),
       chainlink: ChunkBatch(T.chainlink(), 460, { transparent: true, renderOrder: 3 }),
       plank: ChunkBatch(T.plywood(), 900),
       block: ChunkBatch(T.cinder(), 1000),
       bamboo: ChunkBatch(T.bamboo(), 520),
       thatch: ChunkBatch(T.thatch(), 800),
+      hull: ChunkBatch(T.hullPanel(), 5200),
     };
     wireMat = new THREE.LineBasicMaterial({ color: 0x222222 });
     hedgeMat = new THREE.MeshBasicMaterial({ map: T.leaf(), vertexColors: true });
@@ -1694,8 +1715,11 @@ G.world = (function () {
     W.mapClock = 0;
     W.mapUpdate = null;
     W.minimapPaint = null;
+    W.zeroG = false;
+    W.hasGround = true;
     if (W.mapId === 'construction') buildSiteMap();
     else if (W.mapId === 'island') buildIslandMap();
+    else if (W.mapId === 'station') buildStationMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -2438,6 +2462,291 @@ G.world = (function () {
       }
     };
     addSky(0xff9e63, { cloudTint: 0xffd9c4, sunTint: 0xffb24a, sunPos: [-150, 42, -60], sunScale: 42, clouds: 5 });
+  }
+
+  // ============ MAP 4: MERIDIAN STATION — zero-g, everything's a hull breach waiting ============
+  function buildStationMap() {
+    W.bounds = { x: 46, z: 40 };
+    W.teamSpawns = [{ x: -34, z: 0 }, { x: 36, z: 4 }];
+    W.zeroG = true;
+    W.hasGround = false;
+    W.spaceY = { min: -14, max: 26 };
+
+    const whiteGeos = [];
+    const HULL_TINT = 0xf4f6fa, TRIM = 0xb8c2d0;
+
+    // ---- deck/ceiling tiles: every panel is its own destructible prop ----
+    const tileGrid = (x0, z0, x1, z1, topY, o) => {
+      o = o || {};
+      const nx = Math.max(1, Math.round((x1 - x0) / 4.8)), nz = Math.max(1, Math.round((z1 - z0) / 4.8));
+      const tw = (x1 - x0) / nx, td = (z1 - z0) / nz;
+      for (let i = 0; i < nx; i++)
+        for (let j = 0; j < nz; j++) {
+          const cx = x0 + (i + 0.5) * tw, cz = z0 + (j + 0.5) * td;
+          if (o.hole && cx > o.hole[0] && cx < o.hole[2] && cz > o.hole[1] && cz < o.hole[3]) continue;
+          addProp('tile', cx, topY - 0.28, cz, tw - 0.1, 0.28, td - 0.1,
+            o.glassy ? T.glassTex : T.hullFloor,
+            o.glassy ? 0xbfe4f2 : ((i + j) % 2 ? 0xe8ecf2 : 0xd4dae4),
+            o.hp || 70, { step: true, metal: !o.glassy, glassy: o.glassy });
+        }
+    };
+    // ---- hull walls ----
+    const hullW = (ox, oz, dir, cols, rows, fn, tint) => {
+      const wl = WallGrid({ ox, oz, oy: 0, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'hull', tint: tint || HULL_TINT, hp: 60, house: null });
+      wallFill(wl, fn);
+      return wl;
+    };
+    const door = (c0, c1, rTop) => (c, r) => (c >= c0 && c <= c1 && r <= (rTop || 4)) ? 1 : 0;
+    // windows band helper: door gap + porthole pairs
+    const winsAndDoor = (d0, d1, wr0, wr1) => (c, r) =>
+      (d0 !== undefined && c >= d0 && c <= d1 && r <= 4) ? 1 :
+      (r >= wr0 && r <= wr1 && (c % 4 === 1 || c % 4 === 2)) ? 3 : 0;
+
+    // ================= THE HUB (grand atrium, two levels, open core) =================
+    tileGrid(-13, -13, 13, 13, 0);                                       // main deck
+    tileGrid(-13, -13, 13, 13, 4.4, { hole: [-6.5, -6.5, 6.5, 6.5] });   // gallery ring
+    tileGrid(-13, -13, 13, 13, 8.5);                                     // ceiling
+    hullW(-13, -13, 'x', 26, 12, winsAndDoor(11, 14, 6, 7));             // north (door → hydro corridor)
+    hullW(-13, 13, 'x', 26, 12, winsAndDoor(11, 14, 6, 7));              // south
+    hullW(-13, -13, 'z', 26, 12, winsAndDoor(11, 14, 6, 7));             // west
+    hullW(13, -13, 'z', 26, 12, winsAndDoor(11, 14, 6, 7));              // east
+    // gallery guard rail (hull half-walls with gaps at the four bridges)
+    for (const [gx, gz, gd, gc] of [[-6.5, -6.5, 'x', 13], [-6.5, 6.2, 'x', 13], [-6.5, -6.5, 'z', 13], [6.2, -6.5, 'z', 13]]) {
+      const rl = WallGrid({ ox: gx, oz: gz, oy: 4.4, dir: gd, cols: gc, rows: 1, cw: 1, ch: 0.6, th: 0.12, kind: 'hull', tint: TRIM, hp: 20, house: null });
+      wallFill(rl, (c) => (c >= 5 && c <= 7) ? 1 : 0);
+    }
+    // the holotable + light column
+    addProp('holo', 0, 0, 0, 2.6, 0.95, 2.6, T.console, 0x3a4252, 90, { metal: true });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.9, 7.4, 10, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+    beam.position.set(0, 4.4, 0);
+    grp.add(beam);
+    // red lounge chairs, planters, kiosks (the 2001 lobby look)
+    for (const [dx2, dz2, ry] of [[-3.4, -1.8, 0.5], [3.4, -1.8, -0.5], [-3.4, 2.2, 2.6], [3.4, 2.2, -2.6]])
+      addProp('djinn', dx2, 0, dz2, 1.8, 0.8, 0.85, T.plain, 0xd23b3b, 40, { rotY: ry });
+    for (const [px7, pz7] of [[-11, -11], [11, -11], [-11, 11], [11, 11]]) {
+      addProp('planter', px7, 0, pz7, 1.7, 0.85, 1.7, T.plain, 0xdde2ea, 45, { metal: true });
+      for (let i = 0; i < 4; i++) {
+        const fg = new THREE.PlaneGeometry(1.5, 0.6);
+        fg.translate(0.7, 0, 0); fg.rotateZ(-0.5); fg.rotateY(i * 1.57 + px7);
+        fg.translate(px7, 1.5, pz7);
+        frondGeos.push(fg);
+      }
+    }
+    addProp('kiosk', -8, 0, 0, 0.9, 1.9, 0.9, T.console, 0x4a5266, 50, { metal: true });
+    addProp('kiosk', 8, 0, 0, 0.9, 1.9, 0.9, T.console, 0x4a5266, 50, { metal: true });
+    addProp('hal', 6, 1.4, -12.6, 1.0, 2.1, 0.28, T.hal, 0xffffff, 120, { metal: true });
+    // gallery loot
+    addProp('crate', -10.5, 4.4, -10.5, 1.2, 1.0, 1.2, T.plain, 0x9aa4b4, 30, {});
+    addProp('console', 10, 4.4, 10.5, 2.6, 1.05, 0.85, T.console, 0x3a4252, 60, { metal: true });
+    addProp('cell', 10.8, 4.4, -10.6, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+
+    // ================= CORRIDORS (N/S/E/W spokes) =================
+    for (const [cx0, cz0, cx1, cz1, dir] of [
+      [13, -2.6, 19, 2.6, 'x'], [-19, -2.6, -13, 2.6, 'x'],
+      [-2.6, 13, 2.6, 19, 'z'], [-2.6, -19, 2.6, -13, 'z'],
+    ]) {
+      tileGrid(cx0, cz0, cx1, cz1, 0);
+      tileGrid(cx0, cz0, cx1, cz1, 4.1);
+      if (dir === 'x') {
+        hullW(cx0, cz0, 'x', 6, 6, (c, r) => (r >= 2 && r <= 3 && c % 2 === 1) ? 3 : 0);
+        hullW(cx0, cz1, 'x', 6, 6, (c, r) => (r >= 2 && r <= 3 && c % 2 === 1) ? 3 : 0);
+      } else {
+        hullW(cx0, cz0, 'z', 6, 6, (c, r) => (r >= 2 && r <= 3 && c % 2 === 1) ? 3 : 0);
+        hullW(cx1, cz0, 'z', 6, 6, (c, r) => (r >= 2 && r <= 3 && c % 2 === 1) ? 3 : 0);
+      }
+    }
+
+    // ================= HANGAR BAY (east): shuttle + open space door =================
+    tileGrid(19, -10, 43, 10, 0);
+    tileGrid(19, -10, 43, 10, 8.5);
+    hullW(19, -10, 'x', 24, 12, winsAndDoor(undefined, undefined, 7, 8));
+    hullW(19, 10, 'x', 24, 12, winsAndDoor(4, 6, 7, 8));                 // side door
+    hullW(19, -10, 'z', 20, 12, door(7, 12, 4));                          // to corridor
+    hullW(43, -10, 'z', 20, 12, (c, r) => (c >= 6 && c <= 13 && r <= 8) ? 1 : 0); // BAY DOOR → space
+    plane(1.2, 16, T.hazard(), 42.2, 0.04, 0).material.map.repeat.set(1, 6); // atmo-shield threshold
+    // the shuttle (don't scratch the paint — it's worth more than the block)
+    addProp('shuttle', 32, 0, -4.5, 7.6, 2.5, 3.2, T.container, 0xe8ecf2, 600, { metal: true });
+    addProp('shuttle', 37.2, 0, -4.5, 2.2, 1.7, 2.2, T.console, 0x3a4252, 200, { metal: true }); // cockpit
+    (() => { const g = U.shadedBoxGeo(0.5, 3.4, 2.6); g.rotateZ(0.5); g.translate(29.5, 2.9, -4.5); whiteGeos.push(g); })(); // tail fin
+    (() => { const g = U.shadedBoxGeo(5.2, 0.22, 2.2); g.rotateX(0.55); g.translate(32, 1.5, -6.6); whiteGeos.push(g); })(); // wings
+    (() => { const g = U.shadedBoxGeo(5.2, 0.22, 2.2); g.rotateX(-0.55); g.translate(32, 1.5, -2.4); whiteGeos.push(g); })();
+    // cargo + fuel
+    addProp('crate', 23, 0, 6.5, 1.4, 1.2, 1.4, T.plain, 0x9aa4b4, 30, {});
+    addProp('crate', 24.6, 0, 6.9, 1.2, 1.0, 1.2, T.plain, 0x8a94a4, 30, {});
+    addProp('crate', 23.7, 1.2, 6.6, 1.1, 0.9, 1.1, T.plain, 0xaab4c4, 25, {});
+    addProp('cell', 27, 0, 8, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    addProp('cell', 28.1, 0, 8.2, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    addProp('cell', 27.5, 0, 6.9, 0.7, 1.1, 0.7, T.propane, 0x9fe8ff, 16, { metal: true });
+    addProp('tug', 38, 0, 7, 2.6, 1.3, 1.7, T.plain, 0xffcf4a, 160, { metal: true });
+    addProp('droid', 21, 0, -7.5, 0.65, 0.55, 0.9, T.gunmetal ? T.gunmetal : T.plain, 0x2b2f3a, 25, { metal: true });
+    // glass control booth (NW corner)
+    const bw1 = WallGrid({ ox: 19.3, oz: -6.2, oy: 0, dir: 'x', cols: 5, rows: 4, cw: 1, ch: 0.72, th: 0.18, kind: 'hull', tint: TRIM, hp: 40, house: null });
+    wallFill(bw1, (c, r) => r >= 2 ? 3 : (c === 4 && r <= 1 ? 1 : 0));
+    const bw2 = WallGrid({ ox: 24.3, oz: -10, oy: 0, dir: 'z', cols: 4, rows: 4, cw: 1, ch: 0.72, th: 0.18, kind: 'hull', tint: TRIM, hp: 40, house: null });
+    wallFill(bw2, (c, r) => r >= 2 ? 3 : (c === 2 && r <= 1 ? 1 : 0));
+    addProp('console', 21.5, 0, -8.6, 2.6, 1.05, 0.85, T.console, 0x3a4252, 60, { metal: true });
+
+    // ================= COMMAND BRIDGE (west): the big window =================
+    tileGrid(-43, -8, -19, 8, 0);
+    tileGrid(-43, -8, -19, 8, 7.1);
+    hullW(-43, -8, 'x', 24, 10, winsAndDoor(undefined, undefined, 5, 6));
+    hullW(-43, 8, 'x', 24, 10, winsAndDoor(undefined, undefined, 5, 6));
+    hullW(-19, -8, 'z', 16, 10, door(6, 9, 4));                           // to corridor
+    hullW(-43, -8, 'z', 16, 10, (c, r) => (r >= 2 && r <= 8 && c >= 2 && c <= 13) ? 3 : 0); // panoramic viewport
+    addProp('console', -36, 0, -4, 3.4, 1.1, 0.95, T.console, 0x3a4252, 60, { metal: true });
+    addProp('console', -36, 0, 0, 3.4, 1.1, 0.95, T.console, 0x3a4252, 60, { metal: true });
+    addProp('console', -36, 0, 4, 3.4, 1.1, 0.95, T.console, 0x3a4252, 60, { metal: true });
+    addProp('holo', -28, 0, 0, 1.7, 1.5, 1.7, T.console, 0x2f5a6a, 90, { metal: true });
+    addProp('djinn', -25, 0, 0, 1.8, 0.8, 0.85, T.plain, 0xd23b3b, 40, {});
+    addProp('console', -20.5, 0, -6.4, 2.2, 1.05, 0.8, T.console, 0x3a4252, 60, { metal: true });
+    addProp('locker', -20.5, 0, 6.4, 1.6, 2.0, 0.6, T.container, 0x8a94a4, 40, { metal: true });
+
+    // ================= HYDROPONICS (north): green under glass =================
+    tileGrid(-9, -33, 9, -19, 0);
+    tileGrid(-9, -33, 9, -19, 6.0, { glassy: true, hp: 18 });             // glass canopy
+    hullW(-9, -33, 'x', 18, 8, (c, r) => (c >= 8 && c <= 10 && r <= 3) ? 1 : 0); // EVA gap → space
+    hullW(-9, -19, 'x', 18, 8, door(8, 10, 4));                            // to corridor
+    hullW(-9, -33, 'z', 14, 8, winsAndDoor(undefined, undefined, 3, 5));
+    hullW(9, -33, 'z', 14, 8, winsAndDoor(undefined, undefined, 3, 5));
+    for (const hz of [-30, -27, -24]) { addHedge(-4, hz, true); addHedge(4, hz, true); }
+    for (const [px8, pz8] of [[-7, -31], [7, -31], [-7, -21], [7, -21], [0, -26]]) {
+      addProp('planter', px8, 0, pz8, 1.5, 0.8, 1.5, T.plain, 0xdde2ea, 45, {});
+      for (let i = 0; i < 4; i++) {
+        const fg = new THREE.PlaneGeometry(1.4, 0.55);
+        fg.translate(0.65, 0, 0); fg.rotateZ(-0.45); fg.rotateY(i * 1.6 + pz8);
+        fg.translate(px8, 1.4, pz8);
+        frondGeos.push(fg);
+      }
+    }
+    addProp('tank', -7.5, 0, -26, 1.8, 2.5, 1.8, T.glassTex, 0x9fd8e8, 60, { glassy: true });
+
+    // ================= CREW QUARTERS + MED BAY (south) =================
+    tileGrid(-9, 19, 9, 33, 0);
+    tileGrid(-9, 19, 9, 33, 5.6);
+    hullW(-9, 33, 'x', 18, 8, (c, r) => (c >= 8 && c <= 10 && r <= 3) ? 1 : 0);  // EVA gap → space
+    hullW(-9, 19, 'x', 18, 8, door(8, 10, 4));                                    // to corridor
+    hullW(-9, 19, 'z', 14, 8, winsAndDoor(undefined, undefined, 3, 4));
+    hullW(9, 19, 'z', 14, 8, winsAndDoor(undefined, undefined, 3, 4));
+    const part = WallGrid({ ox: -9, oz: 26, oy: 0, dir: 'x', cols: 18, rows: 6, cw: 1, ch: 0.72, th: 0.2, kind: 'hull', tint: 0xdde2ea, hp: 45, house: null });
+    wallFill(part, (c, r) => (c >= 3 && c <= 4 && r <= 4) ? 1 : (c >= 13 && c <= 14 && r <= 4) ? 1 : 0);
+    // bunk room (north half)
+    for (const bx of [-7.5, -5.2, 5.2, 7.5]) {
+      addProp('bunk', bx, 0, 20.2, 1.0, 0.55, 2.2, T.plain, 0x7fa8d0, 30, {});
+      addProp('bunk', bx, 1.5, 20.2, 1.0, 0.45, 2.2, T.plain, 0x9fc0e0, 30, {});
+    }
+    addProp('locker', -1.2, 0, 19.6, 1.6, 2.0, 0.6, T.container, 0x8a94a4, 40, { metal: true });
+    addProp('vend', 1.8, 0, 19.6, 1.1, 2.0, 0.8, T.console, 0xd24a4a, 55, { metal: true });
+    addProp('vend', 3.2, 0, 19.6, 1.1, 2.0, 0.8, T.console, 0x4a7fd0, 55, { metal: true });
+    // mess + medbay (south half)
+    addProp('table', -4, 0, 29.5, 2.2, 0.8, 1.2, T.plain, 0xdde2ea, 40, {});
+    addProp('table', 3, 0, 29.5, 2.2, 0.8, 1.2, T.plain, 0xdde2ea, 40, {});
+    addProp('bunk', -7.4, 0, 31.5, 1.1, 0.7, 2.3, T.plain, 0xf0f4f8, 30, {});
+    addProp('bunk', 7.4, 0, 31.5, 1.1, 0.7, 2.3, T.plain, 0xf0f4f8, 30, {});
+    addProp('tank', 0, 0, 32, 1.4, 2.4, 1.4, T.glassTex, 0x9fe8c0, 60, { glassy: true });
+
+    // ================= EXTERIOR: trusses, arrays, floating cover =================
+    // solar truss bridging over the hub
+    (() => { const g = U.shadedBoxGeo(0.5, 0.5, 56); g.translate(0, 11, 0); steelGeos.push(g); })();
+    for (const tz of [-24, -17, 17, 24])
+      for (const sgn of [-1, 1])
+        addProp('solar', sgn * 3.4, 10.6, tz, 6.0, 0.16, 5.6, T.solar, 0xffffff, 40, { noWalk: true });
+    // comm masts + rotating radar dish on the bridge roof
+    buildPost(-30, -6, 4.6, 0.22, 7.2, steelGeos);
+    buildPost(24, 8.5, 4.2, 0.2, 8.6, steelGeos);
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(2.1, 0.4, 0.9, 10, 1, true),
+      new THREE.MeshBasicMaterial({ map: T.hullPanel(), color: 0xdde2ea, side: THREE.DoubleSide }));
+    dish.position.set(-30, 12.4, -6);
+    dish.rotation.z = 0.7;
+    grp.add(dish);
+    // floating cargo pods + rocks (cover for the space-walkers)
+    addProp('pod', 22, 3.2, 22, 2.3, 2.3, 2.7, T.container, 0xc86a4a, 70, { metal: true });
+    addProp('pod', -26, 4.5, -20, 2.3, 2.3, 2.7, T.container, 0x4a7fd0, 70, { metal: true });
+    addProp('pod', 32, 2.2, -20, 2.3, 2.3, 2.7, T.container, 0x64a86a, 70, { metal: true });
+    addProp('pod', -18, 3.5, 26, 2.3, 2.3, 2.7, T.container, 0xc8b23e, 70, { metal: true });
+    for (const [ax, ay, az, s] of [[42, 1, 32, 3.2], [-40, 6, -30, 2.6], [-42, -3, 24, 2.2]]) {
+      const g = U.shadedBoxGeo(s, s * 0.8, s * 0.9);
+      g.rotateZ(0.5); g.rotateY(1.1);
+      g.translate(ax, ay, az);
+      rockGeos.push(g);
+      addCollider(ax - s / 2, ay - s * 0.4, az - s / 2, ax + s / 2, ay + s * 0.4, az + s / 2, {});
+    }
+
+    // ---- space skybox: stars, a gas giant, hard sunlight ----
+    scene.background = new THREE.Color(0x05060d);
+    const starSphere = new THREE.Mesh(new THREE.SphereGeometry(290, 16, 10),
+      new THREE.MeshBasicMaterial({ map: T.stars(), side: THREE.BackSide }));
+    grp.add(starSphere);
+    const planet = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.planet(), transparent: true, depthWrite: false }));
+    planet.position.set(150, 34, -170);
+    planet.scale.set(95, 95, 1);
+    grp.add(planet);
+    const sun2 = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.sun(), transparent: true, depthWrite: false, color: 0xfff2d0 }));
+    sun2.position.set(-190, 70, 120);
+    sun2.scale.set(22, 22, 1);
+    grp.add(sun2);
+    if (whiteGeos.length) grp.add(new THREE.Mesh(U.mergeGeos(whiteGeos), new THREE.MeshBasicMaterial({ map: T.hullPanel(), vertexColors: true, color: 0xdde2ea })));
+
+    W.spawnPoints = [
+      { x: -34, z: 0 }, { x: 36, z: 4 }, { x: -10, z: -10 }, { x: 10, z: 10 },
+      { x: 0, z: -26 }, { x: 0, z: 26 }, { x: 24, z: -7 }, { x: -24, z: 5 },
+      { x: 16, z: 0 }, { x: -16, z: 0 }, { x: 0, z: 16 }, { x: 0, z: -16 },
+    ];
+    W.campSpots.push(
+      { x: -10.5, z: 10.5, yaw: Math.atan2(10.5, -10.5) },
+      { x: 21.5, z: -7.5, yaw: Math.PI / 2 },
+      { x: -35, z: 0, yaw: Math.PI / 2 },
+      { x: 4, z: 30, yaw: 0 },
+      { x: -4, z: -30, yaw: Math.PI },
+    );
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#070810'; x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = 'rgba(255,255,255,0.55)';
+      for (let i = 0; i < 40; i++) x.fillRect(((i * 37) % 144) * s, ((i * 53) % 116) * s, 1.5, 1.5);
+      x.fillStyle = '#39404e';
+      x.fillRect((ox - 13) * s, (oz - 13) * s, 26 * s, 26 * s);
+      x.fillRect((ox + 19) * s, (oz - 10) * s, 24 * s, 20 * s);
+      x.fillRect((ox - 43) * s, (oz - 8) * s, 24 * s, 16 * s);
+      x.fillRect((ox - 9) * s, (oz - 33) * s, 18 * s, 14 * s);
+      x.fillRect((ox - 9) * s, (oz + 19) * s, 18 * s, 14 * s);
+      x.fillRect((ox - 2.6) * s, (oz - 19) * s, 5.2 * s, 38 * s);
+      x.fillRect((ox - 19) * s, (oz - 2.6) * s, 38 * s, 5.2 * s);
+    };
+
+    // ---- live station: rotating dish, micrometeor showers ----
+    let meteorT = 30;
+    const meteorBombs = [];
+    const hullPoints = [
+      [31, 8.6, -10], [25, 8.6, 10], [-30, 7.3, -8], [-36, 7.3, 8], [0, 8.7, -13], [8, 8.7, 13],
+      [-4, 6.2, -26], [5, 6.2, -30], [-6, 5.8, 24], [3, 5.8, 31], [13, 4.3, 0], [0, 4.3, -16],
+    ];
+    W.mapUpdate = function (dt) {
+      dish.rotation.y += dt * 0.5;
+      if (!(G.net && G.net.active && !G.net.isHost)) {
+        meteorT -= dt;
+        if (meteorT <= 0) {
+          meteorT = 34 + U.rand(0, 18);
+          if (G.game) {
+            G.game.banner('MICROMETEOR SHOWER', '#9fd4ff');
+            G.game.chat('MERIDIAN OPS', U.pick(['brace brace brace', 'hull insurance does NOT cover this', 'incoming debris field']));
+          }
+          for (let i = 0; i < 3; i++) {
+            const p = hullPoints[Math.floor(Math.random() * hullPoints.length)];
+            meteorBombs.push({ x: p[0] + U.rand(-2, 2), y: p[1], z: p[2] + U.rand(-2, 2), t: 1.0 + i * 0.6 });
+          }
+        }
+        for (let i = meteorBombs.length - 1; i >= 0; i--) {
+          const b = meteorBombs[i];
+          b.t -= dt;
+          if (b.t <= 0) {
+            meteorBombs.splice(i, 1);
+            tmpV.set(b.x, b.y, b.z);
+            W.explode(tmpV, 4.2, 70, { attacker: { name: 'A METEORITE', team: -1 }, tag: 'METEORITE' });
+            if (G.net && G.net.active) G.net.evBoom(tmpV, 4.2, 70, 'METEORITE');
+          }
+        }
+      }
+    };
   }
 
   function buildPalm(x, z, lean) {

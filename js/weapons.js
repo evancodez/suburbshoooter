@@ -308,7 +308,7 @@ G.arsenal = (function () {
       const r = A.rockets[i];
       r.t += dt;
       tmpV2.copy(r.pos);
-      r.vel.y -= 2.5 * dt;
+      if (!G.world.zeroG) r.vel.y -= 2.5 * dt;
       r.pos.addScaledVector(r.vel, dt);
       // trail
       tmpV3.lerpVectors(tmpV2, r.pos, Math.random());
@@ -371,7 +371,7 @@ G.arsenal = (function () {
         }
         continue;
       }
-      n.vel.y -= 14 * dt;
+      if (!G.world.zeroG) n.vel.y -= 14 * dt;
       tmpV2.copy(n.pos);
       tmpV3.copy(n.vel).multiplyScalar(dt);
       const stepLen = tmpV3.length();
@@ -389,7 +389,7 @@ G.arsenal = (function () {
           n.pos.add(tmpV3);
         }
       }
-      if (n.pos.y < 0.11) { n.pos.y = 0.11; n.vel.y = Math.abs(n.vel.y) < 1 ? 0 : -n.vel.y * 0.42; n.vel.x *= 0.9; n.vel.z *= 0.9; }
+      if (!G.world.zeroG && n.pos.y < 0.11) { n.pos.y = 0.11; n.vel.y = Math.abs(n.vel.y) < 1 ? 0 : -n.vel.y * 0.42; n.vel.x *= 0.9; n.vel.z *= 0.9; }
       n.mesh.position.copy(n.pos);
     }
   }

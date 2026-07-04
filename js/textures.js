@@ -299,6 +299,104 @@ window.T = (function () {
     border(x, 64, 128, 5);
     return tex(c);
   };
+  // ---------- space station surfaces ----------
+  T.hullPanel = function () { // clean white 2001-style panels, tinted per instance
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(40,44,52,0.35)'; x.lineWidth = 3;
+    wob(x, 2, 64, 126, 64, 5, 1.5);
+    wob(x, 64, 2, 64, 126, 5, 1.5);
+    x.fillStyle = 'rgba(40,44,52,0.5)';
+    x.fillRect(10, 10, 10, 4); x.fillRect(108, 114, 10, 4); // vents
+    x.strokeStyle = 'rgba(120,160,200,0.3)'; x.lineWidth = 2;
+    x.strokeRect(74, 12, 42, 20); // little service hatch
+    border(x, 128, 128, 6, 'rgba(30,34,42,0.85)');
+    return tex(c);
+  };
+  T.hullFloor = function () { // deck plating with tread grid
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(50,55,65,0.4)'; x.lineWidth = 2.5;
+    for (let i = 16; i < 128; i += 24) { wob(x, i, 4, i, 124, 4, 1); wob(x, 4, i, 124, i, 4, 1); }
+    x.fillStyle = 'rgba(50,55,65,0.5)';
+    for (let px = 10; px < 128; px += 24) for (let py = 10; py < 128; py += 24) x.fillRect(px, py, 4, 4);
+    border(x, 128, 128, 6, 'rgba(30,34,42,0.8)');
+    return tex(c);
+  };
+  T.stars = function () {
+    const { c, x } = cnv(256, 256);
+    x.fillStyle = '#05060d'; x.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 130; i++) {
+      const s = U.rand(0.4, 1.6);
+      x.fillStyle = U.pick(['rgba(255,255,255,0.9)', 'rgba(255,255,255,0.5)', 'rgba(180,200,255,0.8)', 'rgba(255,220,180,0.8)']);
+      x.fillRect(U.rand(0, 256), U.rand(0, 256), s, s);
+    }
+    for (let i = 0; i < 4; i++) { // a few bright ones with a cross flare
+      const px = U.rand(10, 246), py = U.rand(10, 246);
+      x.fillStyle = 'rgba(255,255,255,0.95)';
+      x.fillRect(px - 1, py - 1, 3, 3);
+      x.fillRect(px - 4, py, 9, 1); x.fillRect(px, py - 4, 1, 9);
+    }
+    return tex(c, [4, 2]);
+  };
+  T.planet = function () { // banded gas giant for the window view
+    const { c, x } = cnv(256, 256);
+    x.clearRect(0, 0, 256, 256);
+    x.save();
+    x.beginPath(); x.arc(128, 128, 118, 0, 7); x.clip();
+    const bands = ['#c9885a', '#e8b47e', '#b56f4a', '#e8cf9e', '#c9885a', '#9e5f42', '#e8b47e'];
+    for (let i = 0; i < 7; i++) {
+      x.fillStyle = bands[i];
+      x.fillRect(0, i * 38 - 6, 256, 44);
+    }
+    for (let i = 0; i < 5; i++) T.blob(x, U.rand(50, 200), U.rand(50, 200), U.rand(8, 18), 8, 'rgba(255,240,220,0.35)', null);
+    T.blob(x, 170, 150, 24, 9, 'rgba(150,60,35,0.75)', 'rgba(90,35,20,0.5)', 2); // the big storm
+    x.restore();
+    x.strokeStyle = 'rgba(255,255,255,0.28)'; x.lineWidth = 3;
+    x.beginPath(); x.arc(128, 128, 118, 0, 7); x.stroke();
+    return tex(c);
+  };
+  T.console = function () { // busy little control surface
+    const { c, x } = cnv(128, 64);
+    x.fillStyle = '#2b2f3a'; x.fillRect(0, 0, 128, 64);
+    x.fillStyle = '#7fd4ff'; x.fillRect(8, 8, 40, 22);
+    x.fillStyle = '#3fe07f'; x.fillRect(54, 8, 22, 10);
+    x.fillStyle = '#ffcf4a'; x.fillRect(54, 20, 22, 10);
+    for (let i = 0; i < 12; i++) {
+      x.fillStyle = U.pick(['#ff5a5a', '#3fe07f', '#7fd4ff', '#ffcf4a', '#e8e8f0']);
+      x.fillRect(84 + (i % 4) * 10, 8 + Math.floor(i / 4) * 10, 6, 6);
+    }
+    x.strokeStyle = 'rgba(120,220,255,0.7)'; x.lineWidth = 2;
+    wob(x, 10, 44, 118, 44, 6, 3); wob(x, 10, 52, 118, 52, 6, 3);
+    border(x, 128, 64, 5, 'rgba(15,17,22,0.9)');
+    return tex(c);
+  };
+  T.solar = function () {
+    const { c, x } = cnv(128, 64);
+    x.fillStyle = '#1d3a8f'; x.fillRect(0, 0, 128, 64);
+    x.strokeStyle = 'rgba(140,190,255,0.75)'; x.lineWidth = 2;
+    for (let i = 8; i < 128; i += 16) wob(x, i, 2, i, 62, 3, 0.5);
+    for (let i = 8; i < 64; i += 14) wob(x, 2, i, 126, i, 3, 0.5);
+    x.fillStyle = 'rgba(255,255,255,0.25)';
+    x.beginPath(); x.moveTo(10, 50); x.lineTo(40, 10); x.lineTo(58, 10); x.lineTo(28, 50); x.closePath(); x.fill();
+    border(x, 128, 64, 5, 'rgba(20,24,40,0.9)');
+    return tex(c);
+  };
+  T.hal = function () { // black faceplate, one calm red eye
+    const { c, x } = cnv(64, 128);
+    x.fillStyle = '#14161c'; x.fillRect(0, 0, 64, 128);
+    x.strokeStyle = 'rgba(180,190,210,0.5)'; x.lineWidth = 3;
+    x.strokeRect(6, 6, 52, 116);
+    const g = x.createRadialGradient(32, 52, 2, 32, 52, 16);
+    g.addColorStop(0, '#fff2d0'); g.addColorStop(0.25, '#ff4a2a'); g.addColorStop(1, 'rgba(120,10,5,0)');
+    x.fillStyle = g;
+    x.beginPath(); x.arc(32, 52, 16, 0, 7); x.fill();
+    x.fillStyle = 'rgba(220,230,240,0.8)';
+    x.font = 'bold 11px monospace'; x.textAlign = 'center';
+    x.fillText('CAL 900', 32, 100);
+    border(x, 64, 128, 5, 'rgba(90,96,110,0.8)');
+    return tex(c);
+  };
   T.tiki = function () {
     const { c, x } = cnv(64, 128);
     x.fillStyle = '#8a6a45'; x.fillRect(0, 0, 64, 128);

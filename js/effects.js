@@ -341,12 +341,15 @@ G.fx = (function () {
   };
 
   FX.decal = function (kind, x, y, z, normal, size, tint) {
+    // ground-plane decals make no sense floating in space (wall decals with a normal are fine)
+    if (G.world && G.world.zeroG && !normal && y < 0.15) return -1;
     const d = decals[kind];
     if (!d) return -1;
     return d.spawn(x, y, z, normal, size, tint);
   };
 
   FX.bloodPool = function (x, z, maxSize) {
+    if (G.world && G.world.zeroG) return;
     const idx = decals.pool.spawn(x, 0.02, z, null, 0.1, new THREE.Color(U.rand(0.5, 0.75), 0.02, 0.02));
     bloodPoolGrow.push({ idx, x, z, size: 0.1, maxSize: maxSize || U.rand(1.1, 1.7), t: 0 });
   };
