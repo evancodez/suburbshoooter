@@ -24,6 +24,10 @@ G.world = (function () {
     vend: 1100, cell: 80, shuttle: 25000, dish: 3000, solar: 1200, planter: 300,
     tank: 1500, locker: 150, kiosk: 700, pod: 850, droid: 650, tug: 4200, booth: 60,
     core: 1300, evapod: 2200, monolith: 2001,
+    // gold rush gulch
+    wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
+    keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120,
+    pew: 300, sign: 45, towertank: 9000,
     // downtown
     fountain: 4000, bus: 9500, cart: 700, train: 15000, billboard: 2600,
     fossil: 20000, painting: 12000, vase: 3000, case: 150, sarcoph: 9000, meteor: 18000,
@@ -1168,6 +1172,44 @@ G.world = (function () {
       G.fx.decal('pool', prop.x, 0.03, prop.z, null, 2.6, new THREE.Color(0.45, 0.68, 1));
     } else if (prop.kind === 'potty' && G.game && Math.random() < 0.6) {
       G.game.chat('HOA_Enforcer', U.pick(['NOT the porta-potty', 'you monster', 'someone was in there!!']));
+    } else if (prop.kind === 'tnt') {
+      // the whole point of a mining town
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 6.2, 140, { attacker, tag: 'TNT' });
+    } else if (prop.kind === 'loco') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 7.5, 160, { attacker, tag: 'THE 3:10' });
+      G.fx.shake(1.0, 0.8);
+      if (G.game) G.game.chat('GULCH GAZETTE', 'the 3:10 to Yuma is cancelled. forever.');
+    } else if (prop.kind === 'boxcar') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 6, 120, { attacker, tag: 'FREIGHT' });
+    } else if (prop.kind === 'keg') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 4.2, 80, { attacker, tag: 'WHISKEY' });
+      if (G.game && Math.random() < 0.5) G.game.chat('BARKEEP', U.pick(['the GOOD whiskey!!', 'you drink what you spill, partner', 'that barrel was older than you']));
+    } else if (prop.kind === 'piano' && G.game) {
+      G.audio.thud({ x: prop.x, y: prop.y, z: prop.z });
+      G.game.chat('BARKEEP', U.pick(['the piano man had one job', 'no more requests. ever.', 'HEY — he was playing that!']));
+    } else if (prop.kind === 'bell') {
+      G.fx.shake(0.6, 0.5);
+      if (G.game) G.game.chat('PREACHER', 'for whom does the bell toll? not us anymore.');
+    } else if (prop.kind === 'trough' || prop.kind === 'towertank') {
+      G.fx.addEmitter({ pos: new THREE.Vector3(prop.x, prop.y, prop.z), rate: prop.kind === 'towertank' ? 70 : 30, kind: 'water', dur: prop.kind === 'towertank' ? 2.6 : 1.2 });
+      G.fx.decal('pool', prop.x, 0.03, prop.z, null, prop.kind === 'towertank' ? 3.4 : 2.0, new THREE.Color(0.45, 0.68, 1));
+      if (prop.kind === 'towertank' && G.game) G.game.chat('GULCH GAZETTE', 'THE WATER TOWER?? in THIS drought??');
+    } else if (prop.kind === 'windmill') {
+      if (W._millMesh) {
+        tmpV.set(prop.x, prop.y + 1, prop.z);
+        G.fx.debris(tmpV, new THREE.Vector3(U.rand(-3, 3), U.rand(4, 7), U.rand(-3, 3)), 2.4, 0.25, 2.4, new THREE.Color(0xc9b28a), 9);
+        if (W._millMesh.parent) W._millMesh.parent.remove(W._millMesh);
+        W._millMesh = null;
+        G.fx.muzzle(tmpV, 1.1);
+      }
+    } else if (prop.kind === 'cactus' && G.game && Math.random() < 0.5) {
+      G.game.chat('GULCH GAZETTE', U.pick(['that saguaro was 200 years old', 'the cactus did NOTHING wrong', 'protected species, by the way']));
+    } else if (prop.kind === 'orecart' && G.game && Math.random() < 0.4) {
+      G.game.chat('FOREMAN', U.pick(['my ore!!', 'that cart was full of PAYDIRT', 'we do not have cart insurance']));
     }
   };
 
@@ -1756,6 +1798,7 @@ G.world = (function () {
 
   W.spawnPoints = [];
   W.campSpots = [];
+  W.hillSpots = []; // king of the hill zones: {x, z, y, r}, cycled in order
 
   W.bounds = { x: 66, z: 52 };
   W.teamSpawns = [{ x: -62, z: 2.5 }, { x: 62, z: -2.5 }];
@@ -1765,6 +1808,7 @@ G.world = (function () {
     { id: 'island', name: 'VOLCANO ISLAND' },
     { id: 'station', name: 'MERIDIAN STATION' },
     { id: 'city', name: 'DOWNTOWN' },
+    { id: 'gulch', name: 'GOLD RUSH GULCH' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
@@ -1784,7 +1828,7 @@ G.world = (function () {
       frame: ChunkBatch(T.fence(), 640),
       glass: ChunkBatch(T.glassTex(), 1500, { transparent: true, opacity: 0.62, renderOrder: 4 }),
       city: ChunkBatch(T.cityWall(), 4800),
-      marble: ChunkBatch(T.marble(), 3600),
+      wood: ChunkBatch(T.barnwood(), 3600),
       chainlink: ChunkBatch(T.chainlink(), 460, { transparent: true, renderOrder: 3 }),
       plank: ChunkBatch(T.plywood(), 900),
       block: ChunkBatch(T.cinder(), 1000),
@@ -1804,6 +1848,7 @@ G.world = (function () {
     if (W.mapId === 'island') buildIslandMap();
     else if (W.mapId === 'station') buildStationMap();
     else if (W.mapId === 'city') buildCityMap();
+    else if (W.mapId === 'gulch') buildGulchMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -1940,6 +1985,12 @@ G.world = (function () {
       { x: -58, z: -28 }, { x: 58, z: 28 }, { x: 26, z: -26 }, { x: -26, z: 22 },
     ];
     for (const car of cars) W.campSpots.push({ x: car.group.position.x + 3, z: car.group.position.z + 2, yaw: 0 });
+    W.hillSpots = [
+      { x: 0, z: 0, y: 0, r: 6 },        // the main intersection
+      { x: -32, z: 24, y: 0, r: 5.5 },   // west backyards
+      { x: 33, z: -24, y: 0, r: 5.5 },   // east backyards
+      { x: 0, z: 34, y: 0, r: 5.5 },     // south lawns
+    ];
 
     addSky(0x6cb8ee);
   }
@@ -2185,6 +2236,12 @@ G.world = (function () {
       { x: -36, z: 0 }, { x: 36, z: 0 }, { x: -34, z: -22 }, { x: -34, z: 22 },
       { x: 34, z: -22 }, { x: 34, z: 24 }, { x: 0, z: -30 }, { x: -2, z: 30 },
       { x: -20, z: 16 }, { x: 26, z: -10 }, { x: -26, z: -6 }, { x: 22, z: 18 },
+    ];
+    W.hillSpots = [
+      { x: -20, z: 16, y: 0, r: 5.5 },   // village side
+      { x: 26, z: -10, y: 0, r: 5.5 },   // east grove
+      { x: -2, z: 30, y: 0, r: 5.5 },    // south beach
+      { x: 0, z: -30, y: 0, r: 5.5 },    // north beach
     ];
     W.minimapPaint = function (x, s, ox, oz) {
       x.fillStyle = '#2e8fae'; x.fillRect(0, 0, 144 * s, 116 * s);
@@ -2595,6 +2652,12 @@ G.world = (function () {
       { x: 0, z: -26 }, { x: 0, z: 26 }, { x: 24, z: -7 }, { x: -24, z: 5 },
       { x: 16, z: 0 }, { x: -16, z: 0 }, { x: 0, z: 16 }, { x: 0, z: -16 },
     ];
+    W.hillSpots = [ // on the main deck: zero-g crews have to touch down to hold it
+      { x: 0, z: 0, y: 0, r: 6 },
+      { x: -10.5, z: 10.5, y: 0, r: 5.5 },
+      { x: 21.5, z: -7.5, y: 0, r: 5.5 },
+      { x: 0, z: 22, y: 0, r: 5.5 },
+    ];
     W.campSpots.push(
       { x: -10.5, z: 10.5, yaw: Math.atan2(10.5, -10.5) },
       { x: 21.5, z: -7.5, yaw: Math.PI / 2 },
@@ -2923,6 +2986,12 @@ G.world = (function () {
       { x: -34, z: 44 }, { x: 30, z: 44 }, { x: 46, z: -8 }, { x: -12, z: -44 },
       { x: 8, z: 20 }, { x: 44, z: -40 },
     ];
+    W.hillSpots = [
+      { x: 27, z: -29, y: 0, r: 5.5 },   // the plaza
+      { x: 0, z: 0, y: 0, r: 6 },        // main intersection
+      { x: 0, z: 36, y: 0, r: 5.5 },     // outside the shops
+      { x: -32, z: 23, y: 0, r: 5.5 },   // tower A lobby
+    ];
     W.minimapPaint = function (x, s, ox, oz) {
       x.fillStyle = '#3a3d44';
       x.fillRect(0, 0, 144 * s, 116 * s);
@@ -2933,6 +3002,454 @@ G.world = (function () {
       x.fillRect((ox + 14) * s, (oz - 38) * s, 26 * s, 26 * s);
     };
     addSky(0xffa964, { cloudTint: 0xffd9b8, sunTint: 0xffc24a, sunPos: [140, 52, 70], sunScale: 34 });
+  }
+
+  // ============ MAP 6: GOLD RUSH GULCH — dusty boomtown between two red mesas ============
+  function buildGulchMap() {
+    W.bounds = { x: 62, z: 52 };
+    W.teamSpawns = [{ x: -50, z: 36 }, { x: 50, z: -36 }];
+
+    // hardpan desert + the dirt main street + rail bed
+    plane(420, 420, T.desert(), 0, 0, 0).material.map.repeat.set(56, 56);
+    plane(15, 100, T.dirt(), 0, 0.02, 0).material.map.repeat.set(2, 12);
+    plane(122, 5.6, T.gravel(), 0, 0.024, 40).material.map.repeat.set(30, 2);
+    const railN = plane(118, 0.32, T.plain(), 0, 0.05, 38.9); railN.material.color = new THREE.Color(0x4a4540);
+    const railS = plane(118, 0.32, T.plain(), 0, 0.05, 41.1); railS.material.color = new THREE.Color(0x4a4540);
+    // boardwalks in front of the shops
+    for (const [bx, bz, bw, bd] of [[-11, -6, 2.2, 16], [-11, 13, 2.2, 10], [-11, 29, 2.2, 10], [11, -8, 2.2, 16], [11, 11, 2.2, 10]]) {
+      plane(bw, bd, T.plywood(), bx, 0.06, bz).material.map.repeat.set(1, 4);
+    }
+
+    // invisible town limits
+    addCollider(-68, 0, -56, -62.4, 22, 56, { noShoot: true });
+    addCollider(62.4, 0, -56, 68, 22, 56, { noShoot: true });
+    addCollider(-68, 0, -56, 68, 22, -52.4, { noShoot: true });
+    addCollider(-68, 0, 52.4, 68, 22, 56, { noShoot: true });
+
+    // wall helpers: weathered wood + quarry stone
+    const WD = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ox: o.ox, oy: o.oy || 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.24, kind: 'wood', tint: tint || 0xb98a55, hp: hp || 34, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    const BLK = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ox: o.ox, oy: o.oy || 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: tint || 0xc9b8a0, hp: hp || 70, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    // window band for 6-row shops / 5-row-per-floor buildings
+    const shopWin = (door) => (c, r) => {
+      if (door) { const d = door(c, r); if (d !== undefined) return d; }
+      return (r === 2 || r === 3) && c % 3 === 1 ? 3 : 0;
+    };
+    const floorWin = (door) => (c, r) => {
+      if (door) { const d = door(c, r); if (d !== undefined) return d; }
+      return (r % 5 === 2 || r % 5 === 3) && c % 4 === 1 ? 3 : 0;
+    };
+
+    // ---- THE MESAS: tiered red rock, each drilled through by a mine tunnel ----
+    const mesaGeos = [];
+    function mesa(minx, miny, minz, maxx, maxy, maxz) {
+      const g = U.shadedBoxGeo(maxx - minx, maxy - miny, maxz - minz);
+      g.translate((minx + maxx) / 2, (miny + maxy) / 2, (minz + maxz) / 2);
+      mesaGeos.push(g);
+      addCollider(minx, miny, minz, maxx, maxy, maxz, {});
+      slabs.push({ minx, minz, maxx, maxz, top: maxy });
+    }
+    // west mesa (x -58..-34, z -18..14), tunnel along x at z -2.2..2.2
+    mesa(-58, 0, -18, -34, 3.6, -2.2);
+    mesa(-58, 0, 2.2, -34, 3.6, 14);
+    mesa(-56, 3.6, -16, -36, 6.4, 12);   // spans the tunnel: its underside is the ceiling
+    mesa(-54, 6.4, -14, -38, 9, 10);
+    // east mesa (x 36..58, z -14..18), tunnel along x at z -10.2..-5.8
+    mesa(36, 0, -14, 58, 3.6, -10.2);
+    mesa(36, 0, -5.8, 58, 3.6, 18);
+    mesa(38, 3.6, -12, 56, 6.4, 16);
+    mesa(40, 6.4, -10, 54, 9, 14);
+    // boulder cover in the open desert
+    mesa(-6, 0, -40, -2, 1.6, -37);
+    mesa(6, 0, -34, 9, 1.3, -31.5);
+    mesa(-16, 0, 44, -12.5, 1.4, 47);
+    mesa(30, 0, 26, 33.5, 1.5, 29.5);
+    grp.add(new THREE.Mesh(U.mergeGeos(mesaGeos.splice(0)), new THREE.MeshBasicMaterial({ map: T.redrock(), vertexColors: true })));
+
+    // mine tunnel dressing: timber posts, roof beams, paydirt
+    for (const tz of [[-2.2, 2.2, -56, -36, 0], [-10.2, -5.8, 38, 56, 1]]) {
+      const [z0, z1, x0, x1] = tz;
+      for (let bx = x0 + 2; bx <= x1 - 2; bx += 5) {
+        buildPost(bx, z0 + 0.35, 3.6, 0.3, 0);
+        buildPost(bx, z1 - 0.35, 3.6, 0.3, 0);
+        buildPlatform(bx, (z0 + z1) / 2, 0.62, z1 - z0, 3.58, 0.12); // lintel beam
+      }
+    }
+    addProp('tnt', -52, 0, 0.8, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', -44, 0, -1.2, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', -38.5, 0, 1, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('orecart', -48, 0, -1.1, 1.5, 1.1, 1.0, T.container, 0x6a5a48, 55, { metal: true });
+    addProp('orecart', -40, 0, 0.9, 1.5, 1.1, 1.0, T.container, 0x6a5a48, 55, { metal: true });
+    addProp('tnt', 42, 0, -9.2, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', 48, 0, -6.8, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', 53, 0, -9.4, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('orecart', 45, 0, -7, 1.5, 1.1, 1.0, T.container, 0x6a5a48, 55, { metal: true });
+    addProp('stone', 51, 0, -7.2, 1.3, 0.8, 1.2, T.redrock, 0xb97848, 60, {});
+
+    // mesa access 1: grand scaffold stairs up the outer faces
+    buildStairs(-59.5, 16.4, 0, -1, 2.8, 25, 0.36, 0.52, 0);
+    buildPlatform(-56.4, 2.2, 6.4, 3.0, 9, 0.2);
+    for (const [px, pz] of [[-59.5, 15.8], [-59.5, 10], [-59.5, 5.4], [-57, 2.2]]) buildPost(px, pz, 8.6, 0.34, 0);
+    buildStairs(59.5, 19.8, 0, -1, 2.8, 25, 0.36, 0.52, 0);
+    buildPlatform(56.6, 5.8, 6.2, 3.0, 9, 0.2);
+    for (const [px, pz] of [[59.5, 19.2], [59.5, 13.4], [59.5, 8.6], [57, 5.8]]) buildPost(px, pz, 8.6, 0.34, 0);
+    // mesa access 2: fire-escape ladder towers on the street faces (chained segments)
+    addLadder(-33.35, -6, 0, 3.6, 'e');
+    addLadder(-33.35, -6, 3.6, 6.4, 'e');
+    addLadder(-33.35, -6, 6.4, 9, 'e');
+    buildPlatform(-34.6, -6, 2.6, 3.0, 3.6, 0.16);
+    buildPlatform(-34.6, -6, 2.6, 3.0, 6.4, 0.16);
+    buildPlatform(-35.6, -6, 5.2, 3.0, 9, 0.16);
+    addLadder(35.35, 0, 0, 3.6, 'w');
+    addLadder(35.35, 0, 3.6, 6.4, 'w');
+    addLadder(35.35, 0, 6.4, 9, 'w');
+    buildPlatform(36.6, 0, 2.6, 3.0, 3.6, 0.16);
+    buildPlatform(36.6, 0, 2.6, 3.0, 6.4, 0.16);
+    buildPlatform(37.6, 0, 5.2, 3.0, 9, 0.16);
+
+    // ---- THE TRESTLE: the old rail line, right over main street at y 9 ----
+    const TRX0 = -38, TRX1 = 40, TRSEGS = 18, TRW = (TRX1 - TRX0) / TRSEGS;
+    for (let i = 0; i < TRSEGS; i++) {
+      const cx = TRX0 + TRW * (i + 0.5);
+      addProp('trestle', cx, 8.72, 5, TRW - 0.06, 0.28, 3.4, T.plywood, 0xa87848, 90, { step: true });
+    }
+    // rails on the deck (visual)
+    const tr1 = plane(TRX1 - TRX0, 0.24, T.plain(), (TRX0 + TRX1) / 2, 9.03, 4.3); tr1.material.color = new THREE.Color(0x4a4540);
+    const tr2 = plane(TRX1 - TRX0, 0.24, T.plain(), (TRX0 + TRX1) / 2, 9.03, 5.7); tr2.material.color = new THREE.Color(0x4a4540);
+    // low railings, with a gap where the ladder tower comes up
+    const railA = WallGrid({ ox: TRX0, oy: 9, oz: 3.45, dir: 'x', cols: 78, rows: 1, cw: 1, ch: 0.8, th: 0.15, kind: 'fence', tint: 0x8a6b42, hp: 15, house: null });
+    wallFill(railA, () => 0);
+    const railB = WallGrid({ ox: TRX0, oy: 9, oz: 6.55, dir: 'x', cols: 78, rows: 1, cw: 1, ch: 0.8, th: 0.15, kind: 'fence', tint: 0x8a6b42, hp: 15, house: null });
+    wallFill(railB, (c) => (c >= 34 && c <= 38) ? 1 : 0);
+    // timber bents holding it up (destructible posts — happy demolition)
+    for (const bx of [-33.3, -25.5, -17, -8.6, 10, 18.5, 27, 35.3]) {
+      addProp('trestle', bx, 0, 3.9, 0.5, 8.72, 0.5, T.plywood, 0x9a6b3a, 120, {});
+      addProp('trestle', bx, 0, 6.1, 0.5, 8.72, 0.5, T.plywood, 0x9a6b3a, 120, {});
+      addProp('trestle', bx, 4.1, 5, 0.4, 0.4, 2.6, T.plywood, 0x9a6b3a, 60, {});
+    }
+    addProp('tnt', -8.6, 0, 7.6, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', 10, 0, 2.6, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    // street-level ladder tower up to the deck (chained, rest platform halfway)
+    addLadder(-2, 7.05, 0, 4.5, 's');
+    addLadder(-2, 7.05, 4.5, 9, 's');
+    buildPlatform(-2, 7.85, 2.6, 1.5, 4.5, 0.14);
+    buildPost(-3.2, 8.5, 4.5, 0.24, 0);
+    buildPost(-0.8, 8.5, 4.5, 0.24, 0);
+
+    // ---- WEST SIDE OF MAIN STREET ----
+    // THE LUCKY STRIKE saloon (2 floors + street balcony + tall false front)
+    WD({ ox: -26, oz: -14 }, 'x', 14, 10, floorWin());
+    WD({ ox: -26, oz: 2 }, 'x', 14, 10, floorWin());
+    WD({ ox: -26, oz: -14 }, 'z', 16, 10, floorWin());
+    WD({ ox: -12, oz: -14 }, 'z', 16, 13, floorWin((c, r) => {
+      if (c >= 5 && c <= 7 && r <= 3) return 1;          // swinging doors
+      if (c >= 5 && c <= 7 && r >= 5 && r <= 8) return 1; // balcony doorway
+      if (r >= 10) return c % 4 === 2 ? 3 : 0;            // false-front trim
+    }), 0xc99a5f);
+    // second floor + stair hole along the west wall
+    buildPlatform(-17.2, -6, 10.4, 15.4, 3.6, 0.3);
+    buildPlatform(-24.2, -12.85, 3.0, 1.7, 3.6, 0.3);
+    buildPlatform(-24.2, -2.35, 3.0, 8.1, 3.6, 0.3);
+    buildStairs(-24.2, -11.8, 0, 1, 3.0, 10, 0.36, 0.52, 0);
+    // walkable roof + parapets + rear roof ladder
+    buildPlatform(-19, -6, 13.4, 15.4, 7.2, 0.3);
+    WD({ ox: -25.7, oy: 7.2, oz: -13.7 }, 'x', 13, 1, null, 0xa87848, 20);
+    WD({ ox: -25.7, oy: 7.2, oz: 1.45 }, 'x', 13, 1, null, 0xa87848, 20);
+    WD({ ox: -25.95, oy: 7.2, oz: -13.7 }, 'z', 15, 1, null, 0xa87848, 20);
+    addLadder(-26.55, -10, 0, 3.6, 'w');
+    addLadder(-26.55, -10, 3.6, 7.2, 'w');
+    // street balcony
+    buildPlatform(-11.3, -6, 1.6, 11, 3.6, 0.16);
+    const balRail = WallGrid({ ox: -10.55, oy: 3.6, oz: -11.5, dir: 'z', cols: 11, rows: 1, cw: 1, ch: 0.75, th: 0.12, kind: 'fence', tint: 0x8a6b42, hp: 12, house: null });
+    wallFill(balRail, () => 0);
+    // saloon guts
+    addProp('desk', -18, 0, 0.2, 4.4, 1.05, 0.9, T.floorWood, 0x8a5a32, 60, {});      // the bar
+    addProp('keg', -15.2, 0, 1, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    addProp('keg', -21, 0, 1, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    addProp('keg', -13.4, 3.6, 0.8, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    addProp('piano', -24.5, 0, -8.5, 1.6, 1.3, 0.9, T.plain, 0x2e2420, 60, {});
+    addProp('table', -16, 0, -6, 1.3, 0.8, 1.3, T.plain, 0x9a6b3a, 25, {});
+    addProp('table', -20, 0, -10, 1.3, 0.8, 1.3, T.plain, 0x9a6b3a, 25, {});
+    addProp('shelf', -25.4, 0, 0.4, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('sign', -11.6, 1.1, -10.5, 0.16, 1.3, 1.1, T.wanted, 0xffffff, 10, { rotY: Math.PI / 2 });
+
+    // GENERAL STORE (walkable roof)
+    WD({ ox: -24, oz: 8 }, 'x', 12, 6, shopWin(), 0xa8794a);
+    WD({ ox: -24, oz: 18 }, 'x', 12, 6, shopWin(), 0xa8794a);
+    WD({ ox: -24, oz: 8 }, 'z', 10, 6, null, 0xa8794a);
+    WD({ ox: -12, oz: 8 }, 'z', 10, 6, shopWin((c, r) => { if (c >= 4 && c <= 5 && r <= 3) return 1; }), 0xa8794a);
+    buildPlatform(-18, 13, 11.4, 9.4, 4.32, 0.25);
+    WD({ ox: -23.7, oy: 4.32, oz: 8.3 }, 'x', 11, 1, null, 0x8a6b42, 18);
+    WD({ ox: -23.7, oy: 4.32, oz: 17.7 }, 'x', 11, 1, null, 0x8a6b42, 18);
+    addLadder(-24.55, 13, 0, 4.32, 'w');
+    addProp('shelf', -22, 0, 10.5, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('shelf', -22, 0, 15.5, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('desk', -15, 0, 15.8, 2.6, 1.05, 0.9, T.floorWood, 0x8a5a32, 50, {});
+    addProp('crate', -19, 0, 12, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
+    addProp('crate', -18, 0, 10.6, 0.8, 0.8, 0.8, T.plain, 0xb98a55, 16, {});
+    addProp('barrel', -13.6, 0, 9.4, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+
+    // SHERIFF + JAIL (chainlink = iron bars, bench in the cell)
+    WD({ ox: -24, oz: 24 }, 'x', 12, 6, shopWin(), 0x9a8258);
+    WD({ ox: -24, oz: 34 }, 'x', 12, 6, null, 0x9a8258);
+    WD({ ox: -24, oz: 24 }, 'z', 10, 6, null, 0x9a8258);
+    WD({ ox: -12, oz: 24 }, 'z', 10, 6, shopWin((c, r) => { if (c >= 4 && c <= 5 && r <= 3) return 1; }), 0x9a8258);
+    const cell = WallGrid({ ox: -19, oy: 0, oz: 29.5, dir: 'x', cols: 6, rows: 5, cw: 1, ch: 0.72, th: 0.1, kind: 'chainlink', tint: 0xffffff, hp: 60, house: null });
+    wallFill(cell, (c, r) => (c === 1 && r <= 3) ? 1 : 0);
+    const cell2 = WallGrid({ ox: -19, oy: 0, oz: 29.5, dir: 'z', cols: 5, rows: 5, cw: 1, ch: 0.72, th: 0.1, kind: 'chainlink', tint: 0xffffff, hp: 60, house: null });
+    wallFill(cell2, () => 0);
+    addProp('bench', -16, 0, 32.5, 1.7, 0.55, 0.6, T.plain, 0x8a6b42, 25, {});
+    addProp('desk', -21.5, 0, 26.5, 2.2, 1.05, 0.9, T.floorWood, 0x8a5a32, 50, {});
+    buildPlatform(-18, 29, 11.4, 9.4, 4.32, 0.25);
+    WD({ ox: -23.7, oy: 4.32, oz: 24.3 }, 'x', 11, 1, null, 0x8a6b42, 18);
+    WD({ ox: -23.7, oy: 4.32, oz: 33.7 }, 'x', 11, 1, null, 0x8a6b42, 18);
+    addLadder(-24.55, 29, 0, 4.32, 'w');
+
+    // corral + stable shack (SW)
+    buildFenceRun(-28, -22, -16, -22, false, 'fence', 0x8a6b42, 14);
+    buildFenceRun(-28, -32, -19.5, -32, false, 'fence', 0x8a6b42, 14);
+    buildFenceRun(-28, -32, -28, -22, false, 'fence', 0x8a6b42, 14);
+    buildFenceRun(-16, -32, -16, -22, false, 'fence', 0x8a6b42, 14);
+    addProp('hay', -25, 0, -25, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('hay', -23.2, 0, -27.5, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('hay', -24.2, 1.0, -26.2, 1.2, 0.9, 1.2, T.thatch, 0xd8b968, 15, {});
+    addProp('trough', -18, 0, -24, 1.9, 0.6, 0.8, T.plain, 0x7a5f38, 22, {});
+    addProp('wagon', -20, 0, -29.5, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
+    WD({ ox: -34, oz: -30 }, 'x', 5, 4, null, 0x8f7448);
+    WD({ ox: -34, oz: -25 }, 'x', 5, 4, null, 0x8f7448);
+    WD({ ox: -34, oz: -30 }, 'z', 5, 4, (c, r) => (c >= 1 && c <= 3 && r <= 3) ? 1 : 0, 0x8f7448);
+    buildPlatform(-31.5, -27.5, 6, 6, 2.95, 0.2);
+
+    // ---- EAST SIDE OF MAIN STREET ----
+    // THE IMPERIAL hotel: 3 floors, balconies, roof — the tall one
+    WD({ ox: 12, oz: -16 }, 'x', 16, 15, floorWin(), 0xc4a06a);
+    WD({ ox: 12, oz: 0 }, 'x', 16, 15, floorWin(), 0xc4a06a);
+    WD({ ox: 12, oz: -16 }, 'z', 16, 15, floorWin((c, r) => {
+      if (c >= 6 && c <= 8 && r <= 3) return 1;            // lobby doors
+      if (c >= 6 && c <= 8 && r >= 5 && r <= 8) return 1;  // balcony door fl2
+      if (c >= 6 && c <= 8 && r >= 10 && r <= 13) return 1; // balcony door fl3
+    }), 0xc4a06a);
+    WD({ ox: 28, oz: -16 }, 'z', 16, 15, floorWin(), 0xc4a06a);
+    for (const fy of [3.6, 7.2]) {
+      buildPlatform(18.5, -8, 12.4, 15.4, fy, 0.3);
+    }
+    buildPlatform(26.2, -14.75, 3.0, 1.9, 3.6, 0.3);
+    buildPlatform(26.2, -4.25, 3.0, 7.9, 3.6, 0.3);
+    buildPlatform(26.2, -11.75, 3.0, 7.9, 7.2, 0.3);
+    buildPlatform(26.2, -1.25, 3.0, 1.9, 7.2, 0.3);
+    buildStairs(26.2, -13.6, 0, 1, 3.0, 10, 0.36, 0.52, 0);
+    buildStairs(26.2, -2.4, 0, -1, 3.0, 10, 0.36, 0.52, 3.6);
+    buildStairs(26.2, -13.6, 0, 1, 3.0, 10, 0.36, 0.52, 7.2);
+    // roof: main deck + strip beside the stairwell hole + parapets
+    buildPlatform(18.5, -8, 12.4, 15.4, 10.8, 0.3);
+    buildPlatform(26.2, -4.25, 3.0, 7.9, 10.8, 0.3);
+    WD({ ox: 12.3, oy: 10.8, oz: -15.7 }, 'x', 15, 1, null, 0xa87848, 20);
+    WD({ ox: 12.3, oy: 10.8, oz: -0.55 }, 'x', 15, 1, null, 0xa87848, 20);
+    WD({ ox: 12.3, oy: 10.8, oz: -15.7 }, 'z', 15, 1, null, 0xa87848, 20);
+    // street balconies
+    buildPlatform(11.3, -8, 1.6, 11, 3.6, 0.16);
+    buildPlatform(11.3, -8, 1.6, 11, 7.2, 0.16);
+    for (const by of [3.6, 7.2]) {
+      const br = WallGrid({ ox: 10.55, oy: by, oz: -13.5, dir: 'z', cols: 11, rows: 1, cw: 1, ch: 0.75, th: 0.12, kind: 'fence', tint: 0x8a6b42, hp: 12, house: null });
+      wallFill(br, () => 0);
+    }
+    // rear fire escape to the roof (chained ladders + landings)
+    addLadder(28.55, -8, 0, 3.6, 'e');
+    addLadder(28.55, -8, 3.6, 7.2, 'e');
+    addLadder(28.55, -8, 7.2, 10.8, 'e');
+    buildPlatform(29.3, -8, 1.5, 3.0, 3.6, 0.14);
+    buildPlatform(29.3, -8, 1.5, 3.0, 7.2, 0.14);
+    // lobby + rooms
+    addProp('desk', 20, 0, -2.2, 3.0, 1.05, 0.9, T.floorWood, 0x8a5a32, 55, {});
+    addProp('couch', 16, 0, -12.5, 2.0, 0.85, 0.9, T.couch, 0xffffff, 45, {});
+    addProp('bed', 15, 3.6, -13, 2.1, 0.7, 1.4, T.bed, 0xffffff, 35, {});
+    addProp('bed', 15, 3.6, -3, 2.1, 0.7, 1.4, T.bed, 0xffffff, 35, {});
+    addProp('bed', 15, 7.2, -13, 2.1, 0.7, 1.4, T.bed, 0xffffff, 35, {});
+    addProp('bed', 20, 7.2, -3.4, 2.1, 0.7, 1.4, T.bed, 0xffffff, 35, {});
+    addProp('shelf', 24.2, 0, -15.2, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('crate', 13.8, 10.8, -14, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
+    addProp('barrel', 25, 10.8, -2, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+
+    // BANK OF THE GULCH (stone, with a vault full of gold)
+    BLK({ ox: 12, oz: 6 }, 'x', 12, 6, shopWin());
+    BLK({ ox: 12, oz: 16 }, 'x', 12, 6);
+    BLK({ ox: 12, oz: 6 }, 'z', 10, 6, shopWin((c, r) => { if (c >= 4 && c <= 5 && r <= 3) return 1; }));
+    BLK({ ox: 24, oz: 6 }, 'z', 10, 6);
+    const vaultF = WallGrid({ ox: 17.5, oy: 0, oz: 10.8, dir: 'x', cols: 6, rows: 6, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: 0x8f8a80, hp: 120, house: null });
+    wallFill(vaultF, (c, r) => (c === 1 && r <= 3) ? 1 : 0);
+    const vaultS = WallGrid({ ox: 17.5, oy: 0, oz: 10.8, dir: 'z', cols: 5, rows: 6, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: 0x8f8a80, hp: 120, house: null });
+    wallFill(vaultS, () => 0);
+    addProp('chest', 21.5, 0, 13.6, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('chest', 19.5, 0, 14.6, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('desk', 15, 0, 12.5, 2.6, 1.05, 0.9, T.floorWood, 0x8a5a32, 50, {});
+    buildPlatform(18, 11, 11.4, 9.4, 4.32, 0.25);
+    BLK({ ox: 12.3, oy: 4.32, oz: 6.3 }, 'x', 11, 1, null, 0x9a948a, 25);
+    BLK({ ox: 12.3, oy: 4.32, oz: 15.7 }, 'x', 11, 1, null, 0x9a948a, 25);
+    addLadder(24.55, 11, 0, 4.32, 'e');
+    addProp('tnt', 25.5, 0, 8, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {}); // back-alley heist kit
+
+    // CHURCH + BELL TOWER
+    WD({ ox: 12, oz: 24 }, 'x', 14, 7, null, 0xd9cdb8);
+    WD({ ox: 12, oz: 38 }, 'x', 14, 7, null, 0xd9cdb8);
+    WD({ ox: 12, oz: 24 }, 'z', 14, 7, (c, r) => {
+      if (c >= 5 && c <= 7 && r <= 3) return 1;                     // doors to the street
+      return (r === 3 || r === 4) && c % 4 === 2 ? 3 : 0;           // high windows
+    }, 0xd9cdb8);
+    WD({ ox: 26, oz: 24 }, 'z', 14, 7, (c, r) => ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), 0xd9cdb8);
+    buildPlatform(19, 31, 13.4, 13.4, 5.04, 0.25);
+    WD({ ox: 12.3, oy: 5.04, oz: 24.3 }, 'x', 13, 1, null, 0xc4b8a4, 18);
+    WD({ ox: 12.3, oy: 5.04, oz: 37.7 }, 'x', 13, 1, null, 0xc4b8a4, 18);
+    for (const pz of [27, 30.5, 34]) {
+      addProp('pew', 17, 0, pz, 2.6, 0.7, 0.7, T.plain, 0x9a6b3a, 20, {});
+      addProp('pew', 22, 0, pz, 2.6, 0.7, 0.7, T.plain, 0x9a6b3a, 20, {});
+    }
+    addProp('desk', 19.5, 0, 36.6, 2.2, 1.0, 0.9, T.plain, 0xd9cdb8, 40, {}); // altar
+    // the bell tower: 16 rows tall, open belfry, chained interior ladders
+    WD({ ox: 12, oz: 17 }, 'x', 4, 16, (c, r) => (r >= 11 && r <= 14 && c >= 1 && c <= 2) ? 1 : 0, 0xd9cdb8);
+    WD({ ox: 12, oz: 21 }, 'x', 4, 16, (c, r) => (r >= 11 && r <= 14 && c >= 1 && c <= 2) ? 1 : 0, 0xd9cdb8);
+    WD({ ox: 12, oz: 17 }, 'z', 4, 16, (c, r) => (r >= 11 && r <= 14 && c >= 1 && c <= 2) ? 1 : 0, 0xd9cdb8);
+    WD({ ox: 16, oz: 17 }, 'z', 4, 16, (c, r) => {
+      if (c >= 1 && c <= 2 && r <= 3) return 1;                     // ground door (east, off the alley)
+      return (r >= 11 && r <= 14 && c >= 1 && c <= 2) ? 1 : 0;
+    }, 0xd9cdb8);
+    // free-standing mine ladder up the middle; the belfry floor leaves a slot
+    // for it, so you climb straight through the hatch onto the deck
+    addLadder(14, 19, 0, 3.85, 's');
+    addLadder(14, 19, 3.85, 7.7, 's');
+    buildPlatform(14, 20, 3.0, 1.4, 7.7, 0.18);   // north half (with the bell)
+    buildPlatform(14, 17.9, 3.0, 1.2, 7.7, 0.18); // south half (crest landing)
+    addProp('bell', 14, 8.5, 20.1, 0.9, 1.0, 0.9, T.plain, 0xd4af37, 60, { metal: true, noWalk: true });
+
+    // ---- STREET LIFE ----
+    addProp('stone', 0, 0, 20, 1.7, 0.95, 1.7, T.cinder, 0xb8b0a4, 80, {}); // the town well
+    buildPost(-1, 19.2, 2.3, 0.16, 0); // well roof posts
+    buildPost(1, 20.8, 2.3, 0.16, 0);
+    buildPlatform(0, 20, 2.2, 2.2, 2.5, 0.12);
+    addProp('sign', -2, 0.9, 12, 0.16, 1.3, 1.4, T.wanted, 0xffffff, 10, { rotY: Math.PI / 2 });
+    for (const [hx, hz] of [[-10.2, -2], [-10.2, 10], [10.2, -4], [10.2, 8], [-10.2, 26], [10.2, 20]]) {
+      buildPost(hx, hz, 1.1, 0.14, 0); // hitching posts
+    }
+    addProp('trough', -9.4, 0, -0.6, 1.9, 0.6, 0.8, T.plain, 0x7a5f38, 22, {});
+    addProp('trough', 9.4, 0, 6.4, 1.9, 0.6, 0.8, T.plain, 0x7a5f38, 22, {});
+    addProp('barrel', -11.2, 0, 3.6, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+    addProp('barrel', 11.2, 0, -1.4, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+    addProp('barrel', -11.2, 0, 21, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+    addProp('wagon', 3, 0, -26, 3.4, 2.0, 1.9, T.plain, 0x8a5a30, 80, {});
+    addProp('keg', -6, 0, -18, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    for (const [cx2, cz2] of [[-14, 40], [-30, 24], [-26, -38], [18, -30], [34, 34], [-46, 24], [46, 26], [6, 46]]) {
+      addProp('cactus', cx2, 0, cz2, 0.55, 2.0, 0.55, T.plain, 0x3f8f3f, 30, {});
+    }
+
+    // ---- THE RAILROAD (ground line, north) ----
+    addProp('loco', -20, 0, 40, 7.5, 2.9, 2.6, T.container, 0x2e2e34, 320, { metal: true });
+    addProp('boxcar', -9.5, 0, 40, 7, 2.7, 2.5, T.railside, 0xa0522d, 240, { metal: true });
+    addProp('boxcar', 1, 0, 40, 7, 2.7, 2.5, T.railside, 0x8a4030, 240, { metal: true });
+    buildPlatform(18, 36.4, 16, 4.2, 0.5, 0.5);
+    for (const px2 of [11.5, 18, 24.5]) buildPost(px2, 35.2, 3.4, 0.24, 0.5);
+    buildPlatform(18, 36, 14.5, 3.4, 4.0, 0.14);
+    addProp('bench', 15, 0.5, 37.2, 1.7, 0.55, 0.6, T.plain, 0x8a6b42, 25, {});
+    addProp('bench', 21, 0.5, 37.2, 1.7, 0.55, 0.6, T.plain, 0x8a6b42, 25, {});
+    addProp('crate', 25.5, 0.5, 37, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
+    addProp('sign', 18, 1.6, 34.9, 1.6, 0.9, 0.14, T.wanted, 0xffffff, 10, {});
+    for (const [px3, pz3] of [[29, 36.8], [31, 36.8], [29, 38.6], [31, 38.6]]) buildPost(px3, pz3, 3.2, 0.2, 0);
+    addProp('tank', 30, 3.2, 37.7, 2.0, 1.9, 2.0, T.container, 0x7a5f38, 90, { metal: true });
+
+    // ---- MESA TOPS ----
+    // west: water tower, windmill, homestead cabin
+    for (const [wtx, wtz] of [[-49.2, -9.2], [-46.8, -9.2], [-49.2, -6.8], [-46.8, -6.8]]) buildPost(wtx, wtz, 2.5, 0.22, 9);
+    buildPlatform(-48, -8, 3.1, 3.1, 11.5, 0.16);
+    addProp('towertank', -48, 11.5, -8, 2.3, 2.2, 2.3, T.container, 0x9a6b3a, 200, { metal: true });
+    WD({ ox: -47, oy: 9, oz: 1 }, 'x', 6, 4, null, 0x8f7448);
+    WD({ ox: -47, oy: 9, oz: 6 }, 'x', 6, 4, null, 0x8f7448);
+    WD({ ox: -47, oy: 9, oz: 1 }, 'z', 5, 4, null, 0x8f7448);
+    WD({ ox: -41, oy: 9, oz: 1 }, 'z', 5, 4, (c, r) => (c >= 1 && c <= 2 && r <= 3) ? 1 : 0, 0x8f7448);
+    buildPlatform(-44, 3.5, 6.6, 5.6, 11.95, 0.2);
+    addProp('crate', -45.5, 9, 4.8, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
+    addProp('tnt', -42.6, 9, 2.2, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    // windmill (spinning head, shootable) — fan faces the street (east)
+    buildPost(-41, -12.5, 5.2, 0.3, 9);
+    addProp('windmill', -41, 13.6, -12.5, 0.8, 0.8, 0.8, T.plain, 0x8a8f96, 40, { metal: true, noWalk: true });
+    W._millMesh = new THREE.Group();
+    const millSpin = new THREE.Group();
+    for (let b = 0; b < 4; b++) {
+      const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 2.6), new THREE.MeshBasicMaterial({ map: T.plywood(), color: 0xc9b28a, side: THREE.DoubleSide }));
+      blade.position.y = 1.3;
+      const arm = new THREE.Group();
+      arm.add(blade);
+      arm.rotation.z = (b / 4) * Math.PI * 2;
+      millSpin.add(arm);
+    }
+    W._millMesh.add(millSpin);
+    W._millSpin = millSpin;
+    W._millMesh.rotation.y = Math.PI / 2;
+    W._millMesh.position.set(-40.55, 14.3, -12.5);
+    grp.add(W._millMesh);
+    // east: mine head-frame tower + shack + TNT shed
+    for (const [hfx, hfz] of [[44.8, -3.2], [47.2, -3.2], [44.8, -0.8], [47.2, -0.8]]) buildPost(hfx, hfz, 6.4, 0.3, 9);
+    buildPlatform(46, -2, 3.4, 3.4, 15.3, 0.2);
+    addLadder(44.35, -2, 9, 12.2, 'w');
+    addLadder(44.35, -2, 12.2, 15.3, 'w');
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.25, 10), new THREE.MeshBasicMaterial({ map: T.gunmetal ? T.gunmetal() : T.plain(), color: 0x6a6f76 }));
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(46, 16.2, -2);
+    grp.add(wheel);
+    WD({ ox: 48, oy: 9, oz: 6 }, 'x', 5, 4, null, 0x8f7448);
+    WD({ ox: 48, oy: 9, oz: 10 }, 'x', 5, 4, null, 0x8f7448);
+    WD({ ox: 53, oy: 9, oz: 6 }, 'z', 4, 4, null, 0x8f7448);
+    WD({ ox: 48, oy: 9, oz: 6 }, 'z', 4, 4, (c, r) => (c >= 1 && c <= 2 && r <= 3) ? 1 : 0, 0x8f7448);
+    buildPlatform(50.5, 8, 5.6, 4.6, 11.95, 0.2);
+    addProp('tnt', 49, 9, 7.2, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('tnt', 52, 9, 8.8, 0.95, 0.95, 0.95, T.tnt, 0xffffff, 12, {});
+    addProp('orecart', 43, 9, 6, 1.5, 1.1, 1.0, T.container, 0x6a5a48, 55, { metal: true });
+    addProp('stone', 46.5, 9, 10, 1.4, 0.9, 1.3, T.redrock, 0xb97848, 60, {});
+
+    // ---- flow: spawns, camp spots, hills ----
+    W.spawnPoints = [
+      { x: 0, z: -46 }, { x: 0, z: 47 }, { x: -50, z: 36 }, { x: 50, z: -36 },
+      { x: -50, z: -30 }, { x: 50, z: 30 }, { x: -30, z: 42 }, { x: 30, z: -42 },
+      { x: -60, z: 0 }, { x: 60, z: 2 }, { x: -20, z: -34 }, { x: 30, z: 22 },
+      { x: -30, z: 18 }, { x: 34, z: 44 }, { x: 6, z: 28 }, { x: -8, z: -20 },
+    ];
+    W.campSpots.push(
+      { x: -13, z: -6, yaw: -Math.PI / 2 },        // saloon balcony, watching the street
+      { x: 18, z: -8, yaw: Math.PI / 2 },          // hotel roof
+      { x: 14, z: 19.5, yaw: Math.PI / 2 },        // the belfry
+      { x: -39.5, z: 4, yaw: -Math.PI / 2 },       // west mesa rim
+      { x: 41.5, z: 0, yaw: Math.PI / 2 },         // east mesa rim
+      { x: 0, z: 5, yaw: 0 },                      // mid-trestle
+      { x: 18, z: 11, yaw: Math.PI / 2 },          // bank roof
+      { x: -35.5, z: 0, yaw: -Math.PI / 2 },       // west tunnel mouth
+      { x: 18, z: 37, yaw: Math.PI },              // rail platform
+    );
+    W.hillSpots = [
+      { x: 0, z: 20, y: 0, r: 5.5 },     // the town well
+      { x: -19, z: -6, y: 0, r: 5 },     // inside the saloon
+      { x: 18, z: 37.5, y: 0.5, r: 5.5 },// the rail platform
+      { x: 33, z: -8, y: 0, r: 5 },      // east mine mouth
+    ];
+
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#cf9a5e'; x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#b3763f'; x.fillRect((ox - 7.5) * s, 0, 15 * s, 116 * s);           // main street
+      x.fillStyle = '#8a8178'; x.fillRect(0, (oz + 37.2) * s, 144 * s, 5.6 * s);         // rail bed
+      x.fillStyle = '#4a4540'; x.fillRect(0, (oz + 39.6) * s, 144 * s, 1.0 * s);         // rails
+      x.fillStyle = '#a85b30';                                                           // the mesas
+      x.fillRect((ox - 58) * s, (oz - 18) * s, 24 * s, 32 * s);
+      x.fillRect((ox + 36) * s, (oz - 14) * s, 22 * s, 32 * s);
+      x.fillStyle = '#c9855a';                                                           // upper tiers
+      x.fillRect((ox - 54) * s, (oz - 14) * s, 16 * s, 24 * s);
+      x.fillRect((ox + 40) * s, (oz - 10) * s, 14 * s, 24 * s);
+      x.fillStyle = '#9a6b3a'; x.fillRect((ox - 38) * s, (oz + 3.3) * s, 78 * s, 3.4 * s); // the trestle
+    };
+    W.mapUpdate = function (dt) {
+      if (W._millMesh && W._millSpin) W._millSpin.rotation.z += dt * 1.4;
+    };
+    addSky(0xffab6b, { cloudTint: 0xffd9b0, sunTint: 0xffb84a, sunPos: [150, 34, -80], sunScale: 44, clouds: 5 });
   }
 
   function buildPalm(x, z, lean) {
@@ -2978,6 +3495,7 @@ G.world = (function () {
     steelGeos.length = 0; rockGeos.length = 0; frondGeos.length = 0; palmTrunkGeos.length = 0; sandGeos.length = 0;
     ladders.length = 0; lavas.length = 0; geysers.length = 0; groundHoles.length = 0;
     W.campSpots.length = 0;
+    W.hillSpots.length = 0;
     W.bill = {}; W.billTotal = 0; W.chunksDestroyed = 0;
     W.build(scene);
   };

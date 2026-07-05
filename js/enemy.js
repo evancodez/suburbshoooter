@@ -246,11 +246,13 @@ G.botMgr = (function () {
 
   function respawn(bot) {
     // spawn on own team's side, far from living enemies
+    // (free-for-all: no sides — everyone's team is their own)
+    const ffa = G.game && (G.game.mode === 'ffa' || G.game.mode === 'gun');
     let best = null, bestD = -1;
     const enemies = enemiesOf(bot.team);
     for (let i = 0; i < 6; i++) {
       const s = U.pick(G.world.spawnPoints);
-      const sideOk = bot.team === 0 ? s.x <= 0 : s.x >= 0;
+      const sideOk = ffa ? true : (bot.team === 0 ? s.x <= 0 : s.x >= 0);
       let minD = 999;
       for (const e of enemies) minD = Math.min(minD, U.dist2d(s.x, s.z, e.pos.x, e.pos.z));
       const score = minD + (sideOk ? 25 : 0) + U.rand(0, 10);
@@ -327,7 +329,12 @@ G.botMgr = (function () {
 
   // ---------- shooting ----------
   function attackerInfo(bot) {
-    return { attacker: bot, attackerPos: bot.group.position, tag: bot.weapon === 'sg' ? 'SG' : bot.weapon === 'rl' ? 'ROCKET' : 'AR' };
+    return { attacker: bot, attackerPos: bot.group.position, tag: bot.weapon === 'sg' ? 'SG' : bot.weapon === 'rl' ? 'ROCKET' : bot.weapon === 'sr' ? 'SR' : 'AR' };
+  }
+  function botDmg(bot, hitT) {
+    if (bot.weapon === 'sg') return Math.max(3, bot.cfg.dmg * 0.7 * (1 - hitT / 26));
+    if (bot.weapon === 'sr') return bot.cfg.dmg * 3.2; // slow, heavy single taps
+    return bot.cfg.dmg;
   }
   function botShoot(bot) {
     const t = bot.tgt;
@@ -350,14 +357,11 @@ G.botMgr = (function () {
       const hit = G.world.raycast(rayO, rayD, 85, { player: true, bots: true, remotes: true, skipTeam: bot.team, skipBot: bot });
       const ai = attackerInfo(bot);
       if (hit.kind === 'player') {
-        let dmg = bot.weapon === 'sg' ? Math.max(3, bot.cfg.dmg * 0.7 * (1 - hit.t / 26)) : bot.cfg.dmg;
-        G.game.onPlayerDamage(dmg, bp, bot, 'shot');
+        G.game.onPlayerDamage(botDmg(bot, hit.t), bp, bot, 'shot');
       } else if (hit.kind === 'remote') {
-        let dmg = bot.weapon === 'sg' ? Math.max(3, bot.cfg.dmg * 0.7 * (1 - hit.t / 26)) : bot.cfg.dmg;
-        if (G.net) G.net.evDmgP(hit.remote.id, dmg, bp.x, bp.z, bot.name, bot.team);
+        if (G.net) G.net.evDmgP(hit.remote.id, botDmg(bot, hit.t), bp.x, bp.z, bot.name, bot.team);
       } else if (hit.kind === 'bot') {
-        let dmg = bot.weapon === 'sg' ? Math.max(3, bot.cfg.dmg * 0.7 * (1 - hit.t / 26)) : bot.cfg.dmg;
-        hit.bot.damage(dmg, rayD, { ...ai, head: hit.part === 'head', cause: 'shot' });
+        hit.bot.damage(botDmg(bot, hit.t), rayD, { ...ai, head: hit.part === 'head', cause: 'shot' });
       } else if (hit.kind !== 'none') {
         G.world.applyBulletDamage(hit, 11, rayD, bot);
         // whizz near the local player
@@ -377,12 +381,13 @@ G.botMgr = (function () {
     }
     tmpV.set(rayO.x + rayD.x * 0.3, muzY, rayO.z + rayD.z * 0.3);
     G.fx.muzzle(tmpV, 0.5);
-    G.audio.shot(bot.weapon === 'sg' ? 'sg' : 'bot', bp);
+    G.audio.shot(bot.weapon === 'sg' ? 'sg' : bot.weapon === 'sr' ? 'sr' : 'bot', bp);
     bot.mag--;
     bot.lastShotT = 0;
     bot.radarT = 2.6;
-    if (bot.mag <= 0) { bot.reloadT = bot.weapon === 'sg' ? 2.6 : 2.1; bot.mag = bot.weapon === 'sg' ? 6 : 30; startCover(bot); }
+    if (bot.mag <= 0) { bot.reloadT = bot.weapon === 'sg' ? 2.6 : bot.weapon === 'sr' ? 2.8 : 2.1; bot.mag = botMag(bot.weapon); startCover(bot); }
   }
+  function botMag(w) { return w === 'sg' ? 6 : w === 'sr' ? 5 : 30; }
 
   function botRocket(bot, dist) {
     const t = bot.tgt;
@@ -411,6 +416,14 @@ G.botMgr = (function () {
     if (bot.weapon === 'rl') {
       bot.rocketCd -= dt;
       if (bot.rocketCd <= 0 && dist > 9 && dist < 42) botRocket(bot, dist);
+      return;
+    }
+    if (bot.weapon === 'sr') { // deliberate single taps, any range
+      bot.fireCd -= dt;
+      if (bot.fireCd <= 0) {
+        botShoot(bot);
+        bot.fireCd = U.rand(1.6, 2.4);
+      }
       return;
     }
     if (bot.weapon === 'sg' && dist > 20) return;
@@ -665,6 +678,16 @@ G.botMgr = (function () {
       case 'wander': {
         bot.repathT -= dt;
         if (!bot.path || bot.repathT <= 0 || followPath(bot, baseSpeed)) {
+          // king of the hill: most of the squad converges on the zone instead of roaming
+          const hill = G.game && G.game.mode === 'koth' && G.game.hillPos;
+          if (hill && (bot.idx % 3 !== 0)) { // every 3rd bot still flanks/roams
+            const s = scatter(bot, hill.x, hill.z, U.rand(1, (hill.r || 6) + 2.5));
+            if (!inDanger(s.x, s.z, 2)) {
+              setPath(bot, s.x, s.z);
+              if (bot.moveDir.lengthSq() > 0) bot.targetYaw = Math.atan2(bot.moveDir.x, bot.moveDir.z);
+              break;
+            }
+          }
           const anchor = tgtValid(bot) ? t.pos : { x: 0, z: 0 };
           const bnd = G.world.bounds || { x: 55, z: 37 };
           // three candidate spots — take the one farthest from the squad, skip craters
@@ -691,9 +714,11 @@ G.botMgr = (function () {
         if (!bot.campSpot) {
           let best = null, bestD = -1;
           const anchor = tgtValid(bot) ? t.pos : { x: 0, z: 0 };
+          const hill = G.game && G.game.mode === 'koth' && G.game.hillPos;
           for (let i = 0; i < 4; i++) {
             const s = U.pick(G.world.campSpots);
-            const d = U.dist2d(s.x, s.z, anchor.x, anchor.z);
+            // koth campers overwatch the hill: nearest spot wins instead of farthest
+            const d = hill ? -U.dist2d(s.x, s.z, hill.x, hill.z) : U.dist2d(s.x, s.z, anchor.x, anchor.z);
             if (d > bestD) { bestD = d; best = s; }
           }
           bot.campSpot = best;
@@ -732,6 +757,7 @@ G.botMgr = (function () {
           let fwd = 0;
           if (bot.weapon === 'sg') fwd = dist > 9 ? 1 : (dist < 4 ? -0.3 : 0.2);
           else if (bot.weapon === 'rl') fwd = dist > 30 ? 0.7 : (dist < 13 ? -0.9 : 0); // keep rocket distance
+          else if (bot.weapon === 'sr') fwd = dist > 34 ? 0.5 : (dist < 14 ? -0.8 : 0); // snipers keep their distance
           else if (bot.arche === 'camper') fwd = 0;
           else fwd = dist > 26 ? 0.8 : (dist < 9 ? -0.7 : 0);
           ax += fx * fwd; az += fz * fwd;
@@ -1015,10 +1041,24 @@ G.botMgr = (function () {
     });
     return roster;
   };
+  // gun game weapon ladder — must match GUN_LADDER / GUN_PER in main.js
+  const GUN_LADDER = ['ar', 'sg', 'sr', 'rl'], GUN_PER = 2;
   M.update = function (dt) {
     for (let i = dangers.length - 1; i >= 0; i--) {
       dangers[i].t -= dt;
       if (dangers[i].t <= 0) dangers.splice(i, 1);
+    }
+    // gun game: bots ride the same ladder the humans do (host/solo authoritative)
+    if (!M.puppet && G.game && G.game.mode === 'gun') {
+      for (const b of M.bots) {
+        const w = GUN_LADDER[Math.min(GUN_LADDER.length - 1, Math.floor(b.kills / GUN_PER))];
+        if (b.weapon !== w) {
+          b.weapon = w;
+          b.mag = w === 'sg' ? 6 : w === 'sr' ? 5 : w === 'rl' ? 1 : 30;
+          b.burstLeft = 0; b.reloadT = 0;
+          b.rocketCd = Math.max(b.rocketCd, 1.2);
+        }
+      }
     }
     for (const b of M.bots) updateBot(b, dt);
   };

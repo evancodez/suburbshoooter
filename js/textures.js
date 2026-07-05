@@ -876,5 +876,96 @@ window.T = (function () {
     return tex(c);
   };
 
+  // ---------- gold rush gulch ----------
+  T.barnwood = function () { // sun-bleached vertical planks, tinted per instance
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(60,35,15,0.35)'; x.lineWidth = 3;
+    for (let px = 16; px < 128; px += 21) wob(x, px, 2, px + U.rand(-3, 3), 126, 8, 2.5);
+    x.strokeStyle = 'rgba(60,35,15,0.18)'; x.lineWidth = 2;
+    for (let i = 0; i < 9; i++) {
+      const gx = U.rand(4, 122), gy = U.rand(8, 118);
+      wob(x, gx, gy, gx + U.rand(-2, 2), gy + U.rand(10, 26), 3, 1.5);
+    }
+    // knots + nail heads
+    x.fillStyle = 'rgba(60,35,15,0.4)';
+    for (let i = 0; i < 4; i++) { x.beginPath(); x.arc(U.rand(10, 118), U.rand(10, 118), U.rand(2, 4), 0, 7); x.fill(); }
+    x.fillStyle = 'rgba(30,30,30,0.55)';
+    for (let px = 16; px < 128; px += 21) { x.fillRect(px - 6, 10, 3, 3); x.fillRect(px - 6, 114, 3, 3); }
+    border(x, 128, 128, 6);
+    return tex(c);
+  };
+  T.redrock = function () { // layered canyon stone
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#c96f3e'; x.fillRect(0, 0, 128, 128);
+    const bands = ['#b95f34', '#d67f48', '#a95530', '#e08d52'];
+    let y = 0;
+    for (let i = 0; y < 128; i++) {
+      const h = U.rand(10, 24);
+      x.fillStyle = bands[i % bands.length];
+      x.fillRect(0, y, 128, h);
+      x.strokeStyle = 'rgba(60,25,10,0.4)'; x.lineWidth = 3;
+      wob(x, 0, y, 128, y + U.rand(-3, 3), 8, 2.5);
+      y += h;
+    }
+    x.strokeStyle = 'rgba(60,25,10,0.3)'; x.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const gx = U.rand(8, 120), gy = U.rand(8, 108);
+      wob(x, gx, gy, gx + U.rand(-4, 4), gy + U.rand(8, 18), 3, 2);
+    }
+    return tex(c);
+  };
+  T.desert = function () { // dusty red-orange hardpan
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#d9a06a'; x.fillRect(0, 0, 128, 128);
+    x.fillStyle = 'rgba(190,120,70,0.5)';
+    for (let i = 0; i < 26; i++) blob(x, U.rand(0, 128), U.rand(0, 128), U.rand(3, 9), 7, 'rgba(196,128,78,0.45)');
+    x.fillStyle = 'rgba(120,70,40,0.5)';
+    for (let i = 0; i < 30; i++) x.fillRect(U.rand(0, 126), U.rand(0, 126), 2, 2);
+    // cracked earth lines
+    x.strokeStyle = 'rgba(140,85,50,0.5)'; x.lineWidth = 2;
+    for (let i = 0; i < 5; i++) {
+      const gx = U.rand(0, 128), gy = U.rand(0, 128);
+      wob(x, gx, gy, gx + U.rand(-30, 30), gy + U.rand(-30, 30), 5, 4);
+    }
+    return tex(c, [1, 1]);
+  };
+  T.tnt = function () { // red crate, rope handle, big letters
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#c8402e'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(60,15,10,0.6)'; x.lineWidth = 4;
+    wob(x, 0, 24, 128, 24, 6, 2); wob(x, 0, 104, 128, 104, 6, 2);
+    x.fillStyle = '#f5e6c8';
+    x.font = 'bold 46px "Comic Sans MS", cursive';
+    x.textAlign = 'center';
+    x.strokeStyle = '#3a1008'; x.lineWidth = 6;
+    x.strokeText('TNT', 64, 80); x.fillText('TNT', 64, 80);
+    border(x, 128, 128, 7, 'rgba(50,12,8,0.9)');
+    return tex(c);
+  };
+  T.railside = function () { // weathered boxcar slats
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128);
+    x.strokeStyle = 'rgba(40,25,15,0.4)'; x.lineWidth = 3;
+    for (let y = 18; y < 128; y += 20) wob(x, 2, y, 126, y, 7, 2);
+    x.strokeStyle = 'rgba(40,25,15,0.55)'; x.lineWidth = 5;
+    wob(x, 64, 4, 64, 124, 6, 2);
+    border(x, 128, 128, 6);
+    return tex(c);
+  };
+  T.wanted = function () { // WANTED poster board
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#e8d5a8'; x.fillRect(0, 0, 128, 128);
+    x.fillStyle = '#3a2a18';
+    x.font = 'bold 24px "Comic Sans MS", cursive'; x.textAlign = 'center';
+    x.fillText('WANTED', 64, 30);
+    blob(x, 64, 66, 22, 9, '#c9a06a', '#3a2a18', 3);
+    x.fillRect(52, 58, 6, 5); x.fillRect(70, 58, 6, 5); // eyes
+    x.font = 'bold 15px "Comic Sans MS", cursive';
+    x.fillText('$10,000', 64, 112);
+    border(x, 128, 128, 5, 'rgba(58,42,24,0.9)');
+    return tex(c);
+  };
+
   return T;
 })();

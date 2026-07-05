@@ -316,14 +316,20 @@
   <div class="subtitle">~ suburban warfare ~</div>
   <button class="bigbtn" id="deployBtn">DEPLOY</button>
   <div class="panel">
+    <h3>GAME MODE</h3>
+    <div class="btnrow" id="modeSel">
+      <button data-v="vsworld" class="sel">YOU VS WORLD</button><button data-v="tdm">TEAM DEATHMATCH</button><button data-v="ffa">FREE-FOR-ALL</button><button data-v="gun">GUN GAME</button><button data-v="koth">KING OF THE HILL</button>
+    </div>
+    <div id="modeDesc" style="font-size:12.5px; color:#666; margin:2px 0 4px"></div>
     <h3>MAP</h3>
     <div class="btnrow" id="mapSel">
-      <button data-v="suburbs" class="sel">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button>
+      <button data-v="suburbs" class="sel">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button><button data-v="gulch">GOLD RUSH GULCH</button>
     </div>
     <h3>MATCH SETUP</h3>
     <div class="mprow" style="flex-wrap:wrap">
-      <span class="stepper"><b>BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
-      <span class="stepper" style="margin-left:10px"><b>KILLS TO WIN</b> <input type="number" class="numin" id="targetInput" min="1" max="500" step="1"></span>
+      <span class="stepper" id="allyWrap" style="display:none; margin-right:10px"><b>ALLY BOTS</b> <input type="number" class="numin" id="botsAllyInput" min="0" max="20" step="1"></span>
+      <span class="stepper"><b id="botCountLabel">BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
+      <span class="stepper" id="targetWrap" style="margin-left:10px"><b id="targetLabel">KILLS TO WIN</b> <input type="number" class="numin" id="targetInput" min="1" max="500" step="1"></span>
       <span class="stepper" style="margin-left:10px"><b>MINUTES</b> <input type="number" class="numin" id="timeInput" min="1" max="90" step="1"></span>
     </div>
     <h3>DIFFICULTY</h3>
@@ -368,20 +374,26 @@
       <b>YOUR NAME</b>
       <input type="text" id="lobbyName" maxlength="14" placeholder="type a name">
     </div>
-    <div class="hostonly" style="font-size:13px; color:#666">click a player to swap their team</div>
+    <div class="hostonly" id="lobbySwapTip" style="font-size:13px; color:#666">click a player to swap their team</div>
+    <div class="mprow hostonly">
+      <b>MODE</b>
+      <div class="btnrow" id="lobbyMode">
+        <button data-v="tdm" class="sel">TEAM DEATHMATCH</button><button data-v="ffa">FREE-FOR-ALL</button><button data-v="gun">GUN GAME</button><button data-v="koth">KING OF THE HILL</button>
+      </div>
+    </div>
     <div class="mprow hostonly">
       <b>MAP</b>
       <div class="btnrow" id="lobbyMap">
-        <button data-v="suburbs">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button>
+        <button data-v="suburbs">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button><button data-v="gulch">GOLD RUSH GULCH</button>
       </div>
     </div>
     <div id="lobbyMapLabel" style="font-size:13.5px; font-weight:bold; color:#555"></div>
     <div class="mprow hostonly">
-      <span class="stepper"><b>GREEN BOTS</b> <input type="number" class="numin" id="botsAInput" min="0" max="20" step="1"></span>
-      <span class="stepper" style="margin-left:14px"><b>RED BOTS</b> <input type="number" class="numin" id="botsBInput" min="0" max="20" step="1"></span>
+      <span class="stepper"><b id="botsALabel">GREEN BOTS</b> <input type="number" class="numin" id="botsAInput" min="0" max="20" step="1"></span>
+      <span class="stepper" id="botsBWrap" style="margin-left:14px"><b>RED BOTS</b> <input type="number" class="numin" id="botsBInput" min="0" max="20" step="1"></span>
     </div>
     <div class="mprow hostonly">
-      <span class="stepper"><b>KILLS TO WIN</b> <input type="number" class="numin" id="lobbyTarget" min="1" max="500" step="1"></span>
+      <span class="stepper" id="lobbyTargetWrap"><b id="lobbyTargetLabel">KILLS TO WIN</b> <input type="number" class="numin" id="lobbyTarget" min="1" max="500" step="1"></span>
       <span class="stepper" style="margin-left:14px"><b>MINUTES</b> <input type="number" class="numin" id="lobbyTime" min="1" max="90" step="1"></span>
     </div>
     <div class="mprow hostonly">
@@ -408,12 +420,12 @@
   <div class="panel" id="pauseHost" style="display:none; max-width:560px">
     <h3>HOST CONTROLS</h3>
     <div class="mprow">
-      <span class="stepper"><b>GREEN BOTS</b> <input type="number" class="numin" id="pBotsA" min="0" max="20" step="1"></span>
-      <span class="stepper" style="margin-left:12px"><b>RED BOTS</b> <input type="number" class="numin" id="pBotsB" min="0" max="20" step="1"></span>
+      <span class="stepper"><b id="pBotsALabel">GREEN BOTS</b> <input type="number" class="numin" id="pBotsA" min="0" max="20" step="1"></span>
+      <span class="stepper" id="pBotsBWrap" style="margin-left:12px"><b>RED BOTS</b> <input type="number" class="numin" id="pBotsB" min="0" max="20" step="1"></span>
       <button class="bigbtn" id="pBotsApply" style="font-size:14px; padding:4px 14px; margin:0 0 0 12px; background:#7dcfff">APPLY</button>
     </div>
     <div id="pausePlayers"></div>
-    <div style="font-size:12.5px; color:#666">click a player to swap their team — friends can still join with the invite link mid-match</div>
+    <div id="pauseSwapTip" style="font-size:12.5px; color:#666">click a player to swap their team — friends can still join with the invite link mid-match</div>
   </div>
   <button class="bigbtn" id="resumeBtn">RESUME</button>
   <div style="display:flex; gap:12px">

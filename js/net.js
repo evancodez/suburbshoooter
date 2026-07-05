@@ -76,23 +76,31 @@ G.net = (function () {
     if (friendly) { rp.tag.material.depthTest = false; rp.tag.renderOrder = 9; }
     rp.group.add(rp.tag);
   }
+  // free-for-all matches give every human a unique team; the lobby keeps its
+  // green/red split, so while a match runs this override map wins
+  N.teamOverrides = null;
+  function effTeam(p) {
+    if (N.teamOverrides && N.teamOverrides[p.id] !== undefined) return N.teamOverrides[p.id];
+    return p.team;
+  }
   function syncRemotesToLobby() {
     // create/update remote entities from lobby roster (all players except me)
     if (!N.lobby) return;
     // my own entry first — everyone else's colors depend on my team
     const me = N.lobby.players.find(p => p.id === N.myId);
     if (me) {
-      N.myTeam = me.team;
+      N.myTeam = effTeam(me);
       N.myName = me.name; // host may have assigned Guest# or applied a rename
-      if (G.player) G.player.team = me.team;
-      if (me.team !== lastMyTeam) { lastMyTeam = me.team; refreshAllTeamVisuals(); }
+      if (G.player) G.player.team = N.myTeam;
+      if (N.myTeam !== lastMyTeam) { lastMyTeam = N.myTeam; refreshAllTeamVisuals(); }
     }
     for (const p of N.lobby.players) {
       if (p.id === N.myId) continue;
+      const pt = effTeam(p);
       let rp = remoteById(p.id);
-      if (rp && rp.team !== p.team) { removeRemote(p.id); rp = null; } // team swap: rebuild shirts
+      if (rp && rp.team !== pt) { removeRemote(p.id); rp = null; } // team swap: rebuild shirts
       if (!rp) {
-        rp = RemotePlayer(p.id, p.name, p.team);
+        rp = RemotePlayer(p.id, p.name, pt);
         N.remoteList.push(rp);
         refreshTag(rp);
       } else if (rp.name !== p.name) { // renamed in lobby: redraw the floating tag
@@ -149,7 +157,8 @@ G.net = (function () {
     if (N.isHost) hostHandleDied(msg);
     else toHost(msg);
   };
-  N.evEnd = (win) => { if (N.isHost) bc({ t: 'end', win }); };
+  // win: team index (team modes) — wn: winner's display name (ffa/gun modes)
+  N.evEnd = (win, wn) => { if (N.isHost) bc({ t: 'end', win, wn }); };
 
   function routeDmgP(msg) {
     // host: deliver to target (or self), relay so nothing else needs it
@@ -182,6 +191,11 @@ G.net = (function () {
         const a = N.lobby.players.filter(p => p.team === 0).length;
         const b = N.lobby.players.filter(p => p.team === 1).length;
         N.lobby.players.push({ id: msg.pid, name: nm, team: a <= b ? 0 : 1, host: false });
+        // free-for-all in progress: the newcomer needs a unique team too
+        if (N.active && N.teamOverrides) {
+          N.teamOverrides[msg.pid] = N.ffaSeq++;
+          bc({ t: 'teams', teams: N.teamOverrides }); // everyone re-colors
+        }
         pushLobby();
         if (N.active) {
           // match already running: drop them straight in with the current world state
@@ -191,8 +205,10 @@ G.net = (function () {
           });
           fromConn.send({
             t: 'start', cfg: N.matchCfg, roster, late: true,
+            teams: N.teamOverrides || undefined,
             world: G.world.damageSnapshot(),
             scores: G.game ? G.game.teamScores : [0, 0],
+            mk: G.game ? G.game.modeKills : undefined,
             mt: G.game ? Math.round(G.game.matchT) : 0,
             botsAlive: G.botMgr.bots.map(b2 => b2.alive ? 1 : 0),
           });
@@ -219,8 +235,13 @@ G.net = (function () {
         break;
       case 'start':
         N.active = true;
+        N.teamOverrides = msg.teams || null;
         syncRemotesToLobby();
         if (N.onStart) N.onStart(msg.cfg, msg.roster, msg);
+        break;
+      case 'teams': // ffa override map changed (late joiner arrived)
+        N.teamOverrides = msg.teams || null;
+        syncRemotesToLobby();
         break;
       case 'roster': // host changed the bot lineup mid-match
         if (!N.isHost && G.botMgr) {
@@ -320,14 +341,14 @@ G.net = (function () {
       }
       case 'bd': if (!N.isHost) G.botMgr.applyRemoteDeath(msg.i, msg); break;
       case 'bs': if (!N.isHost) G.botMgr.applyRemoteSpawn(msg.i, msg.x, msg.z); break;
-      case 'kf': if (G.game) G.game.onNetKillFeed(msg.kn, msg.vn, msg.tag, msg.h === 1); break;
+      case 'kf': if (G.game) G.game.onNetKillFeed(msg.kn, msg.vn, msg.tag, msg.h === 1, msg.kt); break;
       case 'sc': if (G.game) G.game.setTeamScores(msg.s); break;
       case 'chat':
         if (G.game) G.game.chat(msg.n, msg.m, true);
         relay(msg, fromConn);
         break;
       case 'died': if (N.isHost) hostHandleDied(msg); break;
-      case 'end': if (!N.isHost && G.game) G.game.onNetEnd(msg.win); break;
+      case 'end': if (!N.isHost && G.game) G.game.onNetEnd(msg.win, msg.wn); break;
     }
   }
   function relay(msg, fromConn) { if (N.isHost) bc(msg, fromConn); }
@@ -408,7 +429,7 @@ G.net = (function () {
         N.isHost = true;
         N.myId = id;
         guestN = 0;
-        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10, map: 'suburbs' } };
+        N.lobby = { players: [{ id, name, team: 0, host: true }], cfg: { mode: 'tdm', botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10, map: 'suburbs' } };
         N.myTeam = 0;
         cb && cb();
       });
@@ -483,22 +504,43 @@ G.net = (function () {
     peer = null; conns = []; hostConn = null;
     for (const rp of [...N.remoteList]) removeRemote(rp.id);
     N.active = false; N.isHost = false; N.lobby = null; N.code = '';
+    N.teamOverrides = null;
   };
 
+  // ffa/gun bot roster: player-team slot 0 stays empty, every bot is its own team
+  function ffaCounts(n) {
+    const counts = [0];
+    for (let i = 0; i < n; i++) counts.push(1);
+    return counts;
+  }
   N.startMatch = function () {
     if (!N.isHost || !N.lobby) return;
+    const mode = N.lobby.cfg.mode || 'tdm';
+    const ffa = mode === 'ffa' || mode === 'gun';
     const cfg = {
+      mode,
       botsA: N.lobby.cfg.botsA, botsB: N.lobby.cfg.botsB,
       diff: N.lobby.cfg.diff,
       target: N.lobby.cfg.target || 30,
       time: (N.lobby.cfg.mins || 10) * 60,
       map: N.lobby.cfg.map || 'suburbs',
     };
-    const roster = G.botMgr.rosterFor([cfg.botsA, cfg.botsB]);
+    const roster = ffa
+      ? G.botMgr.rosterFor(ffaCounts((cfg.botsA || 0) + (cfg.botsB || 0)))
+      : G.botMgr.rosterFor([cfg.botsA, cfg.botsB]);
+    // ffa: every human gets a unique team far above the bot range
+    let teams;
+    if (ffa) {
+      teams = {};
+      N.ffaSeq = 100;
+      for (const p of N.lobby.players) teams[p.id] = N.ffaSeq++;
+    }
+    N.teamOverrides = teams || null;
     N.matchCfg = cfg;
     N.matchRoster = roster;
     N.active = true;
-    bc({ t: 'start', cfg, roster });
+    bc({ t: 'start', cfg, roster, teams });
+    syncRemotesToLobby(); // my own team + remote shirts pick up the overrides
     if (N.onStart) N.onStart(cfg, roster, {});
   };
 
@@ -507,12 +549,13 @@ G.net = (function () {
     if (!N.isHost || !N.active || !N.lobby) return;
     N.lobby.cfg.botsA = a;
     N.lobby.cfg.botsB = b;
-    const roster = G.botMgr.rosterFor([a, b]);
+    const ffa = N.matchCfg && (N.matchCfg.mode === 'ffa' || N.matchCfg.mode === 'gun');
+    const roster = ffa ? G.botMgr.rosterFor(ffaCounts(a + b)) : G.botMgr.rosterFor([a, b]);
     N.matchRoster = roster;
     bc({ t: 'roster', roster });
     G.botMgr.init(G.scene, roster, N.lobby.cfg.diff, false);
     pushLobby();
-    if (G.game) G.game.chat('SYSTEM', 'bots updated: ' + a + ' green vs ' + b + ' red', true);
+    if (G.game) G.game.chat('SYSTEM', ffa ? 'bots updated: ' + (a + b) + ' in the pit' : 'bots updated: ' + a + ' green vs ' + b + ' red', true);
   };
 
   // ---------- per-frame ----------

@@ -169,8 +169,10 @@ G.arsenal = (function () {
   A.fireUp = function () { fireHeld = false; };
   A.adsDown = function () { adsHeld = true; };
   A.adsUp = function () { adsHeld = false; };
+  A.lockSwitch = false; // gun game: the ladder decides your weapon, not you
   A.switchTo = function (id, instant) {
     if (!DEFS[id] || (id === A.currentId && !instant)) return;
+    if (A.lockSwitch && !instant) return;
     if (instant) {
       models[A.currentId].visible = false;
       A.currentId = id;
@@ -186,8 +188,15 @@ G.arsenal = (function () {
     G.audio.click();
   };
   A.cycle = function (d) {
+    if (A.lockSwitch) return;
     const i = ORDER.indexOf(A.currentId);
     A.switchTo(ORDER[(i + d + ORDER.length) % ORDER.length]);
+  };
+  // gun game tier-up: hand over the next rung fully loaded
+  A.gunTier = function (id) {
+    if (!DEFS[id]) return;
+    state[id] = { ammo: DEFS[id].mag, reserve: DEFS[id].reserve };
+    A.switchTo(id, true);
   };
   A.reload = function () {
     const st = state[A.currentId], def = DEFS[A.currentId];

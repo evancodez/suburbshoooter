@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- settings ----------
-  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs', layout: 1 };
+  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, botsAlly: 3, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs', layout: 1, mode: 'vsworld' };
   try {
     const s = JSON.parse(localStorage.getItem('blockops_settings') || '{}');
     Object.assign(settings, s);
@@ -54,14 +54,29 @@
   const game = {
     state: 'menu', // menu | playing | dead | over
     paused: false,
-    time: 0, matchT: 600, target: 30,
+    time: 0, matchT: 600, totalT: 600, target: 30,
     teamScores: [0, 0],
+    mode: 'tdm', modeFFA: false, // ffa | gun: everyone for themselves
+    modeKills: {},               // display name → kills (ffa/gun standings)
+    hillPos: null, hillIdx: -1,  // king of the hill state
     lookDX: 0, lookDY: 0,
     recoilP: 0, recoilY: 0,
     flashA: 0, dmgA: 0,
   };
   G.game = game;
   Object.defineProperty(G, 'time', { get: () => game.time });
+
+  // ---------- game modes ----------
+  const MODES = {
+    vsworld: { name: 'YOU VS WORLD', desc: 'just you against every bot on the map — classic', mp: false, teams: false },
+    tdm:     { name: 'TEAM DEATHMATCH', desc: 'green vs red — first team to the kill target wins', mp: true, teams: true },
+    ffa:     { name: 'FREE-FOR-ALL', desc: 'no teams, no friends — first to the kill target wins', mp: true, teams: false },
+    gun:     { name: 'GUN GAME', desc: '2 kills per weapon: AR → shotgun → sniper → rocket. finish the ladder to win', mp: true, teams: false },
+    koth:    { name: 'KING OF THE HILL', desc: 'hold the glowing zone to score — the hill moves, so does the fight', mp: true, teams: true },
+  };
+  const GUN_LADDER = ['ar', 'sg', 'sr', 'rl'], GUN_PER = 2; // mirrored in enemy.js
+  const GUN_TARGET = GUN_LADDER.length * GUN_PER;
+  const HILL_PERIOD = 40, HILL_YTOL = 3.2;
 
   // ---------- input ----------
   const keys = {};
@@ -135,14 +150,20 @@
     const on = N && N.active && N.isHost && N.lobby;
     $('pauseHost').style.display = on ? '' : 'none';
     if (!on) return;
-    if (document.activeElement !== $('pBotsA')) $('pBotsA').value = N.lobby.cfg.botsA;
-    if (document.activeElement !== $('pBotsB')) $('pBotsB').value = N.lobby.cfg.botsB;
+    const ffa = N.matchCfg && (N.matchCfg.mode === 'ffa' || N.matchCfg.mode === 'gun');
+    $('pBotsALabel').textContent = ffa ? 'BOTS' : 'GREEN BOTS';
+    $('pBotsBWrap').style.display = ffa ? 'none' : '';
+    $('pauseSwapTip').textContent = ffa
+      ? 'free-for-all: no teams — friends can still join with the invite link mid-match'
+      : 'click a player to swap their team — friends can still join with the invite link mid-match';
+    if (document.activeElement !== $('pBotsA')) $('pBotsA').value = ffa ? (N.lobby.cfg.botsA || 0) + (N.lobby.cfg.botsB || 0) : N.lobby.cfg.botsA;
+    if (document.activeElement !== $('pBotsB')) $('pBotsB').value = ffa ? 0 : N.lobby.cfg.botsB;
     let html = '';
     for (const p of N.lobby.players) {
-      html += `<span class="lplayer" style="display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:6px; background:${p.team === 0 ? '#dcf5dc' : '#f8ded8'}" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''} ⇄</span>`;
+      html += `<span class="lplayer" style="display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:6px; background:${ffa ? '#eee' : p.team === 0 ? '#dcf5dc' : '#f8ded8'}" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${ffa ? '' : ' ⇄'}</span>`;
     }
     $('pausePlayers').innerHTML = html;
-    $('pausePlayers').querySelectorAll('.lplayer').forEach(el => {
+    if (!ffa) $('pausePlayers').querySelectorAll('.lplayer').forEach(el => {
       el.addEventListener('click', () => {
         const p = N.lobby.players.find(q => q.id === el.dataset.id);
         if (p) N.setTeam(p.id, 1 - p.team);
@@ -427,7 +448,9 @@
       // host scores + broadcasts the feed; clients report to the host
       G.net.evDied(killerName, attackerTeamOf(attacker), tag);
     } else {
-      game.teamScores[1 - player.team]++;
+      const kt = attackerTeamOf(attacker);
+      if (game.mode === 'tdm' || game.mode === 'vsworld') game.teamScores[1 - player.team]++;
+      else if (game.modeFFA && kt >= 0) creditKill(killerName);
       game.killfeed(killerName, tag, 'YOU', '#ff6655');
       checkEnd();
     }
@@ -459,7 +482,7 @@
     return best;
   }
   function respawnPlayer() {
-    const best = pickSpawn(G.net && G.net.active ? player.team : undefined);
+    const best = pickSpawn(G.net && G.net.active && !game.modeFFA ? player.team : undefined);
     player.pos.set(best.x, 0, best.z);
     player.vel.set(0, 0, 0);
     player.yaw = Math.atan2(best.x, best.z); // face the middle of the map
@@ -492,11 +515,37 @@
     'Fire hydrants make excellent sprinklers.',
   ];
   function myDisplayName() { return G.net && G.net.active ? G.net.myName : 'YOU'; }
+  // ffa/gun standings: one tally per display name, fed exactly once per kill
+  const ENV_KILLERS = { 'YOURSELF': 1, 'THE SUBURBS': 1, 'THE VOLCANO': 1, 'SYSTEM': 1 };
+  function creditKill(name) {
+    if (!name || !game.modeFFA || ENV_KILLERS[name]) return;
+    game.modeKills[name] = (game.modeKills[name] || 0) + 1;
+  }
+  // leader among everyone (excluding me when mineExcluded)
+  function ffaLeader(mineExcluded) {
+    const me = myDisplayName();
+    let name = null, kills = -1;
+    for (const k in game.modeKills) {
+      if (mineExcluded && k === me) continue;
+      if (game.modeKills[k] > kills) { kills = game.modeKills[k]; name = k; }
+    }
+    return { name, kills: Math.max(0, kills) };
+  }
   // personal reward flow — runs when *I* got the kill (solo direct, MP via feed match)
   function personalKill(head) {
     player.kills++;
     player.streak++;
     player.bestStreak = Math.max(player.bestStreak, player.streak);
+    // gun game: my ladder position is my kill count
+    if (game.mode === 'gun') {
+      const tier = Math.min(GUN_LADDER.length - 1, Math.floor(player.kills / GUN_PER));
+      const id = GUN_LADDER[tier];
+      if (id !== G.arsenal.currentId) {
+        G.arsenal.gunTier(id);
+        game.banner('TIER ' + (tier + 1) + '/' + GUN_LADDER.length + ' — ' + G.arsenal.def().name, '#ffd23e');
+        G.audio.uav();
+      }
+    }
     G.arsenal.onKillReward(player.kills);
     player.multiN++;
     player.multiT = 4;
@@ -523,13 +572,20 @@
     }
   }
   // feed line + personal-kill detection; used locally and for network kill events
-  game.onNetKillFeed = function (kn, vn, tag, head) {
+  // kt: killer's team when known (env/volcano kills are -1 and never score)
+  game.onNetKillFeed = function (kn, vn, tag, head, kt) {
     const meKiller = kn === myDisplayName() || kn === 'YOU';
     const meVictim = vn === myDisplayName();
+    if (kt === undefined || kt >= 0) creditKill(kn); // ffa/gun standings (all clients)
     if (meVictim) return; // own death feed is drawn in playerDie / applyDmgP path
     game.killfeed(meKiller ? 'YOU' : kn, tag + (head ? ' ⌖' : ''), vn, '#ccc');
     if (meKiller) personalKill(head);
   };
+  // kills only move the team score in the kill-race modes
+  function teamKillPoint(killerTeam, victimTeam) {
+    if (game.mode !== 'tdm' && game.mode !== 'vsworld') return;
+    if (killerTeam >= 0 && killerTeam !== victimTeam) game.teamScores[killerTeam]++;
+  }
   // bot died where AI is authoritative (solo or MP host)
   game.onBotDied = function (bot, opts, deathInfo) {
     const att = opts.attacker;
@@ -538,8 +594,8 @@
     else if (att && att.group) { killerName = att.name; killerTeam = att.team; att.kills++; }
     else if (att && att.name !== undefined) { killerName = att.name; killerTeam = att.team; }
     const tag = opts.tag || 'BOOM';
-    if (killerTeam >= 0 && killerTeam !== bot.team) game.teamScores[killerTeam]++;
-    if (killerName) game.onNetKillFeed(killerName, bot.name, tag, !!opts.head);
+    teamKillPoint(killerTeam, bot.team);
+    if (killerName) game.onNetKillFeed(killerName, bot.name, tag, !!opts.head, killerTeam);
     else game.killfeed(opts.tag || 'KABOOM', 'env', bot.name, '#ccc');
     if (G.net && G.net.active && G.net.isHost) {
       G.net.evBotDie(G.botMgr.bots.indexOf(bot), deathInfo || {});
@@ -550,9 +606,10 @@
   };
   // a human died (host authoritative in MP; also handles the host's own death)
   game.onHumanDied = function (vn, vt, by, bt, tag) {
-    if (bt >= 0 && bt !== vt) game.teamScores[bt]++;
+    teamKillPoint(bt, vt);
     const meVictim = vn === myDisplayName();
-    if (!meVictim) game.onNetKillFeed(by || 'THE SUBURBS', vn, tag || 'AR', false);
+    if (!meVictim) game.onNetKillFeed(by || 'THE SUBURBS', vn, tag || 'AR', false, bt);
+    else if (bt >= 0) creditKill(by); // my own death: the feed path above is skipped
     if (G.net && G.net.active && G.net.isHost) {
       G.net.evKillFeed(bt, by || 'THE SUBURBS', vn, tag || 'AR', false);
       G.net.evScore(game.teamScores);
@@ -561,7 +618,10 @@
   };
   game.setTeamScores = function (s) { game.teamScores = s; checkEndClientside(); };
   function checkEndClientside() { /* clients wait for the host's end event */ }
-  game.onNetEnd = function (winTeam) { endMatch(winTeam === player.team, winTeam === -1); };
+  game.onNetEnd = function (winTeam, winnerName) {
+    if (winnerName !== undefined && winnerName !== null) endMatch(winnerName === myDisplayName(), winTeam === -1, winnerName);
+    else endMatch(winTeam === player.team, winTeam === -1);
+  };
   game.killfeed = function (left, tag, right, color) {
     const feed = $('feed');
     const div = document.createElement('div');
@@ -618,10 +678,92 @@
   game.markPlayerRadar = function () {};
   game.flash = function (a) { game.flashA = Math.max(game.flashA, a); };
 
+  // ---------- king of the hill ----------
+  let hillMesh = null;
+  function hillVisible(v) { if (hillMesh) hillMesh.visible = v; }
+  function ensureHillMesh() {
+    if (hillMesh) return;
+    hillMesh = new THREE.Group();
+    const cyl = new THREE.Mesh(
+      new THREE.CylinderGeometry(1, 1, 5.5, 20, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
+    cyl.position.y = 2.75;
+    const beam = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 46, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.38, depthWrite: false }));
+    beam.position.y = 23;
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2),
+      new THREE.MeshBasicMaterial({ map: T.ring(), transparent: true, depthWrite: false }));
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.07;
+    hillMesh.add(cyl); hillMesh.add(beam); hillMesh.add(ring);
+    hillMesh.userData = { cyl, beam, ring };
+    hillMesh.visible = false;
+    scene.add(hillMesh); // lives outside the world group, survives map resets
+  }
+  function hillSpots() {
+    return (G.world.hillSpots && G.world.hillSpots.length) ? G.world.hillSpots : [{ x: 0, z: 0, y: 0, r: 6 }];
+  }
+  function inHill(x, z, y, h) {
+    return U.dist2d(x, z, h.x, h.z) < (h.r || 6) && Math.abs(y - (h.y || 0)) < HILL_YTOL;
+  }
+  function updateKoth(dt) {
+    if (game.mode !== 'koth') return;
+    ensureHillMesh();
+    // the hill hops between preset spots on a fixed clock — every client
+    // derives the same spot from the (synced) match timer, no extra messages
+    const spots = hillSpots();
+    const elapsed = Math.max(0, game.totalT - game.matchT);
+    const idx = Math.floor(elapsed / HILL_PERIOD) % spots.length;
+    if (idx !== game.hillIdx) {
+      game.hillIdx = idx;
+      const h = spots[idx];
+      game.hillPos = h;
+      const r = h.r || 6;
+      hillMesh.position.set(h.x, h.y || 0, h.z);
+      hillMesh.userData.cyl.scale.set(r, 1, r);
+      hillMesh.userData.ring.scale.set(r * 1.2, r * 1.2, 1);
+      hillMesh.visible = true;
+      if (elapsed > 2) { game.banner('THE HILL MOVED', '#7dcfff'); G.audio.uav(); }
+    }
+    const h = game.hillPos;
+    if (!h) return;
+    hillMesh.rotation.y += dt * 0.4;
+    // who's standing in it (everyone computes for the glow color; host scores)
+    let mine = 0, theirs = 0, t0 = 0, t1 = 0;
+    const consider = (team, x, z, y) => {
+      if (!inHill(x, z, y, h)) return;
+      if (team === 0) t0++; else if (team === 1) t1++;
+      if (team === player.team) mine++; else theirs++;
+    };
+    if (player.alive && player.spawnProtectT <= 0) consider(player.team, player.pos.x, player.pos.z, player.pos.y);
+    for (const b of G.botMgr.bots) if (b.alive) consider(b.team, b.group.position.x, b.group.position.z, b.group.position.y);
+    if (G.net && G.net.active) for (const rp of G.net.remoteList) if (rp.alive) consider(rp.team, rp.pos.x, rp.pos.z, rp.pos.y);
+    const col = (mine && theirs) ? 0xffffff : mine ? 0x59e04f : theirs ? 0xff5040 : 0xffd23e;
+    hillMesh.userData.cyl.material.color.setHex(col);
+    hillMesh.userData.beam.material.color.setHex(col);
+    // score ticks: 1 point/sec to whichever team holds it uncontested
+    if (G.net && G.net.active && !G.net.isHost) return;
+    game.hillTickT += dt;
+    if (game.hillTickT >= 1) {
+      game.hillTickT -= 1;
+      if (t0 > 0 && t1 === 0) game.teamScores[0]++;
+      else if (t1 > 0 && t0 === 0) game.teamScores[1]++;
+      else return;
+      if (G.net && G.net.active) G.net.evScore(game.teamScores);
+      checkEnd();
+    }
+  }
+
   // ---------- match flow ----------
   function baseStartMatch(cfg) {
     G.world.reset(cfg.map);  // build the chosen map fresh
     G.fx.reset();            // no leftover blood/debris/smoke
+    game.mode = cfg.mode || 'tdm';
+    game.modeFFA = game.mode === 'ffa' || game.mode === 'gun';
+    game.modeKills = {};
+    game.hillIdx = -1; game.hillPos = null; game.hillTickT = 0;
+    hillVisible(false);
     player.team = cfg.myTeam || 0;
     player.hp = 100; player.alive = true;
     player.kills = 0; player.deaths = 0; player.streak = 0; player.bestStreak = 0;
@@ -630,14 +772,18 @@
     player.spawnProtectT = 1.4;
     game.teamScores = [0, 0];
     game.matchT = cfg.time || 600;
-    game.target = cfg.target || 30;
+    game.totalT = game.matchT;
+    game.target = game.mode === 'gun' ? GUN_TARGET : (cfg.target || 30);
     game.time = 0;
     game.state = 'playing';
     game.paused = false;
     G.arsenal.reset();
+    G.arsenal.lockSwitch = game.mode === 'gun'; // the ladder picks your gun
     G.world.bill = {}; G.world.billTotal = 0; G.world.chunksDestroyed = 0;
-    // spawn on my side, facing the middle of the map
-    const sp = cfg.spawn || G.world.teamSpawns[player.team] || { x: 0, z: 0 };
+    // spawn on my side, facing the middle of the map (ffa: any spawn point)
+    const sp = cfg.spawn ||
+      (game.modeFFA ? U.pick(G.world.spawnPoints || [{ x: 0, z: 0 }]) : G.world.teamSpawns[player.team]) ||
+      { x: 0, z: 0 };
     player.pos.set(sp.x, 0, sp.z);
     player.vel.set(0, 0, 0);
     // face the map center (camera forward is (-sin yaw, -cos yaw))
@@ -656,31 +802,46 @@
     if (G.world.zeroG) setTimeout(() => {
       if (game.state === 'playing') game.banner('ZERO-G — JETPACK ONLINE · SPACE up · SHIFT down', '#7fd4ff');
     }, 800);
+    const md = MODES[game.mode];
+    if (md && game.mode !== 'vsworld') setTimeout(() => {
+      if (game.state === 'playing') game.banner(md.name + (game.mode === 'koth' ? ' — HOLD THE ZONE' : ''), '#ffd23e');
+    }, 300);
   }
   function numVal(id, def, min, max) {
     const v = Math.round(parseFloat($(id).value));
     return isNaN(v) ? def : U.clamp(v, min, max);
   }
   function startSolo() {
+    settings.mode = (document.querySelector('#modeSel .sel') || { dataset: { v: 'vsworld' } }).dataset.v;
     settings.bots = numVal('botCountInput', 6, 0, 40);
+    settings.botsAlly = numVal('botsAllyInput', 3, 0, 20);
     settings.target = numVal('targetInput', 30, 1, 500);
     settings.mins = numVal('timeInput', 10, 1, 90);
     settings.diff = document.querySelector('#diffSel .sel').dataset.v;
     settings.map = document.querySelector('#mapSel .sel').dataset.v;
     saveSettings();
     if (G.net) G.net.leave();
-    baseStartMatch({ myTeam: 0, target: settings.target, time: settings.mins * 60, map: settings.map });
-    const roster = G.botMgr.rosterFor([0, settings.bots]);
+    const mode = settings.mode;
+    baseStartMatch({ mode, myTeam: 0, target: settings.target, time: settings.mins * 60, map: settings.map });
+    // roster shape depends on the mode
+    let roster;
+    if (mode === 'tdm' || mode === 'koth') roster = G.botMgr.rosterFor([settings.botsAlly, settings.bots]);
+    else if (mode === 'ffa' || mode === 'gun') { // every bot is its own team (player is team 0)
+      const counts = [0];
+      for (let i = 0; i < settings.bots; i++) counts.push(1);
+      roster = G.botMgr.rosterFor(counts);
+    } else roster = G.botMgr.rosterFor([0, settings.bots]); // you vs world
     G.botMgr.init(scene, roster, settings.diff, false);
   }
   function startNetMatch(cfg, roster, extra) {
     settings.diff = cfg.diff;
-    baseStartMatch({ myTeam: G.net.myTeam, time: cfg.time, target: cfg.target, map: cfg.map });
+    baseStartMatch({ mode: cfg.mode, myTeam: G.net.myTeam, time: cfg.time, target: cfg.target, map: cfg.map });
     G.botMgr.init(scene, roster, cfg.diff, !G.net.isHost);
     if (extra && extra.late) {
       // joined mid-match: fast-forward to the host's world
       if (extra.world) G.world.applyDamageSnapshot(extra.world);
       if (extra.scores) game.teamScores = extra.scores;
+      if (extra.mk) game.modeKills = extra.mk;
       if (extra.mt !== undefined) game.matchT = extra.mt;
       if (extra.botsAlive) extra.botsAlive.forEach((a, i) => { if (!a) G.botMgr.forceDead(i); });
       game.banner && game.banner('JOINED MATCH IN PROGRESS', '#7dcfff');
@@ -689,6 +850,19 @@
   function checkEnd() {
     if (game.state === 'over') return;
     if (G.net && G.net.active && !G.net.isHost) return; // host decides
+    if (game.modeFFA) {
+      // kill race between individuals: first to the target, or top score at time
+      const lead = ffaLeader(false);
+      if (lead.kills >= game.target || game.matchT <= 0) {
+        // a tie at the buzzer is a draw
+        let tied = 0;
+        for (const k in game.modeKills) if (game.modeKills[k] === lead.kills) tied++;
+        const draw = game.matchT <= 0 && (tied > 1 || !lead.name);
+        if (G.net && G.net.active) G.net.evEnd(draw ? -1 : -2, draw ? null : lead.name);
+        endMatch(lead.name === myDisplayName(), draw, draw ? null : lead.name);
+      }
+      return;
+    }
     const a = game.teamScores[0], b = game.teamScores[1];
     if (a >= game.target || b >= game.target || game.matchT <= 0) {
       const winTeam = a === b ? -1 : (a > b ? 0 : 1);
@@ -696,14 +870,18 @@
       endMatch(winTeam === player.team, winTeam === -1);
     }
   }
-  function endMatch(win, draw) {
+  function endMatch(win, draw, winnerName) {
     game.state = 'over';
     game.paused = false;
+    hillVisible(false);
     document.exitPointerLock && document.exitPointerLock();
     $('hud').style.display = 'none';
     $('death').style.display = 'none';
     const t = $('endTitle');
-    t.textContent = draw ? 'DRAW' : (win ? 'VICTORY' : 'DEFEATED');
+    if (draw) { t.textContent = 'DRAW'; }
+    else if (win) { t.textContent = 'VICTORY'; }
+    else if (winnerName) { t.textContent = (winnerName === 'YOU' ? 'YOU WIN' : winnerName + ' WINS'); }
+    else { t.textContent = 'DEFEATED'; }
     t.style.color = draw ? '#ffd23e' : (win ? '#7dff7d' : '#ff5544');
     // back-to-lobby button when connected
     $('againBtn').textContent = (G.net && G.net.lobby) ? 'BACK TO LOBBY' : 'PLAY AGAIN';
@@ -723,6 +901,11 @@
       hydrant: 'Fire hydrants', hoop: 'Basketball hoops', doghouse: 'Dog houses', kpool: 'Kiddie pools',
       ac: 'AC units', dumpster: 'Dumpsters', potty: 'Porta-potties', lumber: 'Lumber stacks',
       mixer: 'Cement mixers', bed: 'Beds', shelf: 'Bookshelves', picnic: 'Picnic tables', swing: 'Swing seats',
+      wood: 'Barn wood (board)', tnt: 'TNT crates', loco: 'Steam locomotives', boxcar: 'Freight cars',
+      trestle: 'Trestle decking', orecart: 'Ore carts', piano: 'Saloon pianos', keg: 'Whiskey kegs',
+      wagon: 'Covered wagons', hay: 'Hay bales', cactus: 'Protected cacti', bell: 'Church bells',
+      windmill: 'Windmill heads', trough: 'Water troughs', pew: 'Church pews', sign: 'Wanted posters',
+      towertank: 'Water towers', chest: 'Gold chests', stone: 'Quarry stone', crate: 'Supply crates',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -730,6 +913,9 @@
       frame: 25, trash: 20, recycle: 15, hydrant: 950, hoop: 320, doghouse: 180, kpool: 45,
       ac: 480, dumpster: 800, potty: 550, lumber: 60, mixer: 2100, bed: 700, shelf: 260,
       picnic: 400, swing: 130,
+      wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
+      keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120, pew: 300, sign: 45,
+      towertank: 9000, chest: 5000, stone: 400, crate: 45,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
@@ -780,14 +966,29 @@
     $('ammo').style.color = st.ammo === 0 ? '#e83333' : (st.ammo <= Math.max(1, def.mag * 0.25) ? '#e8a020' : '#111');
     $('wname').textContent = def.name + (G.arsenal.reloading && G.arsenal.reloading() ? ' — RELOADING' : '');
     $('nades').textContent = '✸ ' + G.arsenal.grenades;
-    // team score (mine first)
-    const my = game.teamScores[player.team], their = game.teamScores[1 - player.team];
-    $('scoreyou').textContent = my;
-    $('scorethem').textContent = their;
-    const diff = my - their;
+    // score (mine first) — team points, or my kills vs the best rival in ffa/gun
     const wl = $('winlabel');
-    wl.textContent = diff > 0 ? 'WINNING' : (diff < 0 ? 'LOSING' : 'TIED');
-    wl.style.color = diff > 0 ? '#7dff7d' : (diff < 0 ? '#ff5544' : '#ffd23e');
+    if (game.modeFFA) {
+      const mine = game.modeKills[myDisplayName()] || 0;
+      const rival = ffaLeader(true).kills;
+      $('scoreyou').textContent = mine;
+      $('scorethem').textContent = rival;
+      if (game.mode === 'gun') {
+        const tier = Math.min(GUN_LADDER.length, Math.floor(player.kills / GUN_PER) + 1);
+        wl.textContent = 'TIER ' + tier + '/' + GUN_LADDER.length;
+        wl.style.color = '#ffd23e';
+      } else {
+        wl.textContent = mine > rival ? 'LEADING' : (mine < rival ? 'BEHIND' : 'TIED');
+        wl.style.color = mine > rival ? '#7dff7d' : (mine < rival ? '#ff5544' : '#ffd23e');
+      }
+    } else {
+      const my = game.teamScores[player.team] || 0, their = game.teamScores[1 - player.team] || 0;
+      $('scoreyou').textContent = my;
+      $('scorethem').textContent = their;
+      const diff = my - their;
+      wl.textContent = diff > 0 ? 'WINNING' : (diff < 0 ? 'LOSING' : 'TIED');
+      wl.style.color = diff > 0 ? '#7dff7d' : (diff < 0 ? '#ff5544' : '#ffd23e');
+    }
     $('timer').textContent = fmtTime(game.matchT);
     $('fpsc').textContent = GAME.fps ? GAME.fps + ' FPS' : '';
     // streak
@@ -811,7 +1012,7 @@
   const MMOX = 72, MMOZ = 58;
   mmStatic.width = Math.ceil(144 * MMS); mmStatic.height = Math.ceil(116 * MMS);
   let staticMapDirty = true, staticMapT = 0;
-  const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b', hull: '#e8ecf2' };
+  const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b', hull: '#e8ecf2', wood: '#9a6b3a', city: '#c9ced6' };
   function redrawStaticMap() {
     const x = mmStatic.getContext('2d');
     const w2m = (wx, wz) => [(wx + MMOX) * MMS, (wz + MMOZ) * MMS];
@@ -865,7 +1066,7 @@
     x.clearRect(0, 0, S, S);
     x.save();
     x.beginPath(); x.arc(R, R, R - 2, 0, 7); x.clip();
-    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'construction' ? '#8a6640' : '#2c661f';
+    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'city' ? '#2e3036' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);
@@ -891,6 +1092,14 @@
         x.beginPath(); x.arc(dx, dz, 3.8, 0, 7); x.fill();
         if (friendly) { x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.stroke(); }
       }
+    }
+    // the hill (koth): a gold ring you can navigate by
+    if (game.mode === 'koth' && game.hillPos) {
+      const h = game.hillPos;
+      const dx = (h.x - player.pos.x) * s, dz = (h.z - player.pos.z) * s;
+      x.beginPath(); x.arc(dx, dz, (h.r || 6) * s, 0, 7);
+      x.fillStyle = 'rgba(255,210,62,0.22)'; x.fill();
+      x.strokeStyle = '#ffd23e'; x.lineWidth = 2.5; x.stroke();
     }
     x.restore();
     // player arrow
@@ -933,7 +1142,24 @@
       b.classList.add('sel');
     });
   }
-  selGroup('diffSel'); selGroup('mapSel'); selGroup('layoutSel');
+  selGroup('diffSel'); selGroup('mapSel'); selGroup('layoutSel'); selGroup('modeSel');
+  // the match-setup steppers reshape themselves around the selected mode
+  function updateSPModeUI() {
+    const m = (document.querySelector('#modeSel .sel') || { dataset: { v: 'vsworld' } }).dataset.v;
+    const teams = m === 'tdm' || m === 'koth';
+    $('allyWrap').style.display = teams ? '' : 'none';
+    $('botCountLabel').textContent = teams ? 'ENEMY BOTS' : 'BOTS';
+    $('targetWrap').style.display = m === 'gun' ? 'none' : '';
+    $('targetLabel').textContent = m === 'koth' ? 'SCORE TO WIN' : 'KILLS TO WIN';
+    $('modeDesc').textContent = (MODES[m] || MODES.vsworld).desc;
+    // nudge the win target to a sane default when hopping between point/kill modes
+    const v = parseInt($('targetInput').value);
+    if (m === 'koth' && v === 30) $('targetInput').value = 100;
+    if (m !== 'koth' && v === 100) $('targetInput').value = 30;
+  }
+  $('modeSel').addEventListener('click', (e) => {
+    if (e.target.closest('button')) { settings.mode = document.querySelector('#modeSel .sel').dataset.v; saveSettings(); updateSPModeUI(); }
+  });
   // the controls card follows whichever layout is selected
   function renderControls() {
     const L2 = (settings.layout || 1) === 2;
@@ -959,9 +1185,13 @@
   if (!document.querySelector('#diffSel .sel')) document.querySelector('#diffSel button[data-v="normal"]').classList.add('sel');
   document.querySelectorAll('#mapSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.map));
   if (!document.querySelector('#mapSel .sel')) document.querySelector('#mapSel button[data-v="suburbs"]').classList.add('sel');
+  document.querySelectorAll('#modeSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === (settings.mode || 'vsworld')));
+  if (!document.querySelector('#modeSel .sel')) document.querySelector('#modeSel button[data-v="vsworld"]').classList.add('sel');
   $('botCountInput').value = settings.bots;
+  $('botsAllyInput').value = settings.botsAlly === undefined ? 3 : settings.botsAlly;
   $('targetInput').value = settings.target;
   $('timeInput').value = settings.mins;
+  updateSPModeUI();
 
   function bindSlider(id, key, fmt) {
     const el = $(id);
@@ -1035,9 +1265,18 @@
     $('lobbyCode').textContent = N.code;
     $('lobbyLink').value = N.link();
     if (document.activeElement !== $('lobbyName')) $('lobbyName').value = N.myName;
-    // players grouped by team
+    const mode = N.lobby.cfg.mode || 'tdm';
+    const ffa = mode === 'ffa' || mode === 'gun';
+    // players grouped by team (or one big pile in free-for-all)
     let html = '';
-    for (const team of [0, 1]) {
+    if (ffa) {
+      html += `<div class="teamcol"><h3>PLAYERS — EVERYONE FOR THEMSELVES</h3>`;
+      for (const p of N.lobby.players) {
+        html += `<div class="lplayer">${esc(p.name)}${p.host ? ' ★' : ''}</div>`;
+      }
+      const bots = (N.lobby.cfg.botsA || 0) + (N.lobby.cfg.botsB || 0);
+      html += `<div class="lbots">+ ${bots} bot${bots === 1 ? '' : 's'}</div></div>`;
+    } else for (const team of [0, 1]) {
       html += `<div class="teamcol team${team}"><h3>${team === 0 ? 'GREEN TEAM' : 'RED TEAM'}</h3>`;
       for (const p of N.lobby.players.filter(p => p.team === team)) {
         html += `<div class="lplayer" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${isHost ? ' <span class="swapbtn">⇄</span>' : ''}</div>`;
@@ -1046,7 +1285,7 @@
       html += `<div class="lbots">+ ${bots} bot${bots === 1 ? '' : 's'}</div></div>`;
     }
     $('lobbyPlayers').innerHTML = html;
-    if (isHost) {
+    if (isHost && !ffa) {
       $('lobbyPlayers').querySelectorAll('.lplayer').forEach(el => {
         el.addEventListener('click', () => {
           const p = N.lobby.players.find(q => q.id === el.dataset.id);
@@ -1059,10 +1298,19 @@
       if (document.activeElement !== $(id)) $(id).value = N.lobby.cfg[key] === undefined ? def : N.lobby.cfg[key];
     }
     document.querySelectorAll('#lobbyDiff button').forEach(b => b.classList.toggle('sel', b.dataset.v === N.lobby.cfg.diff));
+    document.querySelectorAll('#lobbyMode button').forEach(b => b.classList.toggle('sel', b.dataset.v === mode));
     const mapId = N.lobby.cfg.map || 'suburbs';
     document.querySelectorAll('#lobbyMap button').forEach(b => b.classList.toggle('sel', b.dataset.v === mapId));
     const mapDef = G.world.maps.find(m => m.id === mapId);
-    $('lobbyMapLabel').textContent = 'MAP: ' + (mapDef ? mapDef.name : mapId).toUpperCase();
+    const modeDef = MODES[mode] || MODES.tdm;
+    $('lobbyMapLabel').textContent = modeDef.name + ' · ' + (mapDef ? mapDef.name : mapId).toUpperCase() +
+      (isHost ? '' : ' — ' + modeDef.desc);
+    // mode-shaped labels: ffa/gun pool the bots, koth races to points, gun has a fixed ladder
+    $('lobbySwapTip').textContent = ffa ? 'free-for-all: teams don\'t apply' : 'click a player to swap their team';
+    $('botsALabel').textContent = ffa ? 'BOTS' : 'GREEN BOTS';
+    $('botsBWrap').style.display = ffa ? 'none' : '';
+    $('lobbyTargetWrap').style.display = mode === 'gun' ? 'none' : '';
+    $('lobbyTargetLabel').textContent = mode === 'koth' ? 'SCORE TO WIN' : 'KILLS TO WIN';
     document.querySelectorAll('.hostonly').forEach(el => { el.style.display = isHost ? '' : 'none'; });
     $('lobbyWait').style.display = isHost ? 'none' : 'block';
   }
@@ -1084,6 +1332,15 @@
   $('lobbyMap').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (b && G.net && G.net.isHost) G.net.setCfg('map', b.dataset.v);
+  });
+  $('lobbyMode').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b || !G.net || !G.net.isHost) return;
+    G.net.setCfg('mode', b.dataset.v);
+    // sensible score default when hopping between point and kill races
+    const t = G.net.lobby.cfg.target;
+    if (b.dataset.v === 'koth' && (t === 30 || t === undefined)) G.net.setCfg('target', 100);
+    if (b.dataset.v !== 'koth' && t === 100) G.net.setCfg('target', 30);
   });
   $('copyLinkBtn').addEventListener('click', () => {
     const link = $('lobbyLink').value;
@@ -1230,6 +1487,7 @@
       G.fx.update(dt, camera);
       if (G.net) G.net.update(dt);
       decayRadar(dt);
+      updateKoth(dt);
       updateCamera(dt);
       updateHUD(dt);
       game.lookDX = 0; game.lookDY = 0;
