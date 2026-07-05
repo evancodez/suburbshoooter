@@ -614,6 +614,8 @@ G.arsenal = (function () {
         const need = def.mag - st.ammo;
         const take = Math.min(need, st.reserve);
         st.ammo += take; st.reserve -= take;
+        // gun game: the crate is bottomless — you reload, you never run dry
+        if (G.game && G.game.mode === 'gun') st.reserve = def.reserve;
       }
     }
     // ADS

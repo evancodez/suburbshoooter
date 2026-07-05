@@ -685,12 +685,19 @@
   game.markPlayerRadar = function () {};
   game.flash = function (a) { game.flashA = Math.max(game.flashA, a); };
 
-  // ---------- king of the hill ----------
-  let hillMesh = null;
-  function hillVisible(v) { if (hillMesh) hillMesh.visible = v; }
-  function ensureHillMesh() {
-    if (hillMesh) return;
-    hillMesh = new THREE.Group();
+  // ---------- king of the hill (rebuilt: one module, explicit lifecycle) ----------
+  // Everything KOTH lives here. start() builds fresh visuals for the match,
+  // stop() tears them down completely, update() is guarded so no hill bug can
+  // ever take the whole game loop down with it.
+  const koth = {
+    active: false, mesh: null, parts: null,
+    spots: [], failures: 0,
+    PERIOD: 40, YTOL: 3.2,
+  };
+  koth.start = function () {
+    koth.stop(); // never reuse stale meshes/materials across matches
+    koth.spots = (G.world.hillSpots && G.world.hillSpots.length)
+      ? G.world.hillSpots.slice() : [{ x: 0, z: 0, y: 0, r: 6 }];
     const cyl = new THREE.Mesh(
       new THREE.CylinderGeometry(1, 1, 5.5, 20, 1, true),
       new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }));
@@ -703,43 +710,68 @@
       new THREE.MeshBasicMaterial({ map: T.ring(), transparent: true, depthWrite: false }));
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.07;
-    hillMesh.add(cyl); hillMesh.add(beam); hillMesh.add(ring);
-    hillMesh.userData = { cyl, beam, ring };
-    hillMesh.visible = false;
-    scene.add(hillMesh); // lives outside the world group, survives map resets
-  }
-  function hillSpots() {
-    return (G.world.hillSpots && G.world.hillSpots.length) ? G.world.hillSpots : [{ x: 0, z: 0, y: 0, r: 6 }];
-  }
-  function inHill(x, z, y, h) {
-    return U.dist2d(x, z, h.x, h.z) < (h.r || 6) && Math.abs(y - (h.y || 0)) < HILL_YTOL;
-  }
-  function updateKoth(dt) {
-    if (game.mode !== 'koth') return;
-    ensureHillMesh();
+    const mesh = new THREE.Group();
+    mesh.add(cyl); mesh.add(beam); mesh.add(ring);
+    mesh.visible = false;
+    scene.add(mesh); // outside the world group: map rebuilds can't dispose it
+    koth.mesh = mesh;
+    koth.parts = { cyl, beam, ring };
+    koth.failures = 0;
+    game.hillIdx = -1;
+    game.hillPos = null;
+    game.hillTickT = 0;
+    koth.active = true;
+  };
+  koth.stop = function () {
+    koth.active = false;
+    game.hillPos = null;
+    game.hillIdx = -1;
+    if (koth.mesh) {
+      scene.remove(koth.mesh);
+      koth.mesh.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+      });
+      koth.mesh = null;
+      koth.parts = null;
+    }
+  };
+  koth.inHill = function (x, z, y, h) {
+    return U.dist2d(x, z, h.x, h.z) < (h.r || 6) && Math.abs(y - (h.y || 0)) < koth.YTOL;
+  };
+  koth.update = function (dt) {
+    if (!koth.active || game.mode !== 'koth' || !koth.mesh) return;
+    try {
+      koth.tick(dt);
+    } catch (e) {
+      // a broken hill must never freeze the match — log loudly, retire quietly
+      console.error('KOTH update failed:', e);
+      if (++koth.failures > 20) koth.stop();
+    }
+  };
+  koth.tick = function (dt) {
     // the hill hops between preset spots on a fixed clock — every client
     // derives the same spot from the (synced) match timer, no extra messages
-    const spots = hillSpots();
-    const elapsed = Math.max(0, game.totalT - game.matchT);
-    const idx = Math.floor(elapsed / HILL_PERIOD) % spots.length;
+    const elapsed = Math.max(0, (game.totalT || 600) - (isFinite(game.matchT) ? game.matchT : 0));
+    const idx = Math.floor(elapsed / koth.PERIOD) % koth.spots.length;
     if (idx !== game.hillIdx) {
       game.hillIdx = idx;
-      const h = spots[idx];
+      const h = koth.spots[idx];
       game.hillPos = h;
       const r = h.r || 6;
-      hillMesh.position.set(h.x, h.y || 0, h.z);
-      hillMesh.userData.cyl.scale.set(r, 1, r);
-      hillMesh.userData.ring.scale.set(r * 1.2, r * 1.2, 1);
-      hillMesh.visible = true;
+      koth.mesh.position.set(h.x, h.y || 0, h.z);
+      koth.parts.cyl.scale.set(r, 1, r);
+      koth.parts.ring.scale.set(r * 1.2, r * 1.2, 1);
+      koth.mesh.visible = true;
       if (elapsed > 2) { game.banner('THE HILL MOVED', '#7dcfff'); G.audio.uav(); }
     }
     const h = game.hillPos;
     if (!h) return;
-    hillMesh.rotation.y += dt * 0.4;
+    koth.mesh.rotation.y += dt * 0.4;
     // who's standing in it (everyone computes for the glow color; host scores)
     let mine = 0, theirs = 0, t0 = 0, t1 = 0;
     const consider = (team, x, z, y) => {
-      if (!inHill(x, z, y, h)) return;
+      if (!koth.inHill(x, z, y, h)) return;
       if (team === 0) t0++; else if (team === 1) t1++;
       if (team === player.team) mine++; else theirs++;
     };
@@ -747,8 +779,8 @@
     for (const b of G.botMgr.bots) if (b.alive) consider(b.team, b.group.position.x, b.group.position.z, b.group.position.y);
     if (G.net && G.net.active) for (const rp of G.net.remoteList) if (rp.alive) consider(rp.team, rp.pos.x, rp.pos.z, rp.pos.y);
     const col = (mine && theirs) ? 0xffffff : mine ? 0x59e04f : theirs ? 0xff5040 : 0xffd23e;
-    hillMesh.userData.cyl.material.color.setHex(col);
-    hillMesh.userData.beam.material.color.setHex(col);
+    koth.parts.cyl.material.color.setHex(col);
+    koth.parts.beam.material.color.setHex(col);
     // score ticks: 1 point/sec to whichever team holds it uncontested
     if (G.net && G.net.active && !G.net.isHost) return;
     game.hillTickT += dt;
@@ -760,7 +792,7 @@
       if (G.net && G.net.active) G.net.evScore(game.teamScores);
       checkEnd();
     }
-  }
+  };
 
   // ---------- match flow ----------
   function baseStartMatch(cfg) {
@@ -769,8 +801,7 @@
     game.mode = cfg.mode || 'tdm';
     game.modeFFA = game.mode === 'ffa' || game.mode === 'gun';
     game.modeKills = {};
-    game.hillIdx = -1; game.hillPos = null; game.hillTickT = 0;
-    hillVisible(false);
+    if (game.mode === 'koth') koth.start(); else koth.stop();
     player.team = cfg.myTeam || 0;
     player.hp = 100; player.alive = true;
     player.kills = 0; player.deaths = 0; player.streak = 0; player.bestStreak = 0;
@@ -881,7 +912,7 @@
   function endMatch(win, draw, winnerName) {
     game.state = 'over';
     game.paused = false;
-    hillVisible(false);
+    koth.stop();
     document.exitPointerLock && document.exitPointerLock();
     $('hud').style.display = 'none';
     $('death').style.display = 'none';
@@ -970,7 +1001,7 @@
     // ammo (yellow when low, red when empty)
     const st = G.arsenal.state[G.arsenal.currentId];
     const def = G.arsenal.def();
-    $('ammo').textContent = st.ammo + ' / ' + st.reserve;
+    $('ammo').textContent = st.ammo + ' / ' + (game.mode === 'gun' ? '∞' : st.reserve);
     $('ammo').style.color = st.ammo === 0 ? '#e83333' : (st.ammo <= Math.max(1, def.mag * 0.25) ? '#e8a020' : '#111');
     $('wname').textContent = def.name + (G.arsenal.reloading && G.arsenal.reloading() ? ' — RELOADING' : '');
     $('nades').textContent = '✸ ' + G.arsenal.grenades;
@@ -1233,8 +1264,7 @@
   $('menuBtn').addEventListener('click', () => {
     if (G.net) G.net.leave();
     game.state = 'menu'; game.paused = false;
-    $('pause').style.display = 'none';
-    $('hud').style.display = 'none';
+    clearMatchScreens();
     $('menu').style.display = 'flex';
   });
   $('againBtn').addEventListener('click', () => {
@@ -1244,7 +1274,7 @@
   $('endMenuBtn').addEventListener('click', () => {
     if (G.net) G.net.leave();
     game.state = 'menu';
-    $('end').style.display = 'none';
+    clearMatchScreens();
     $('menu').style.display = 'flex';
   });
 
@@ -1257,12 +1287,20 @@
     return n;
   }
   $('nameInput').value = settings.name || '';
+  // leaving a match for any screen: every gameplay overlay must go, or the
+  // death/pause screens linger on top of the menu and eat all the clicks
+  function clearMatchScreens() {
+    $('death').style.display = 'none';
+    $('pause').style.display = 'none';
+    $('end').style.display = 'none';
+    $('hud').style.display = 'none';
+    koth.stop();
+  }
   function showLobby() {
     game.state = 'menu';
     game.paused = false;
+    clearMatchScreens();
     $('menu').style.display = 'none';
-    $('end').style.display = 'none';
-    $('hud').style.display = 'none';
     $('lobby').style.display = 'flex';
     renderLobby();
   }
@@ -1420,10 +1458,8 @@
       game.banner && game.banner('HOST LEFT THE GAME', '#ff5544');
       G.net.leave();
       game.state = 'menu';
-      $('hud').style.display = 'none';
+      clearMatchScreens();
       $('lobby').style.display = 'none';
-      $('death').style.display = 'none';
-      $('end').style.display = 'none';
       $('menu').style.display = 'flex';
     };
   }
@@ -1496,7 +1532,7 @@
       G.fx.update(dt, camera);
       if (G.net) G.net.update(dt);
       decayRadar(dt);
-      updateKoth(dt);
+      koth.update(dt);
       updateCamera(dt);
       updateHUD(dt);
       game.lookDX = 0; game.lookDY = 0;
