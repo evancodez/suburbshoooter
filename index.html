@@ -164,6 +164,9 @@
   }
   #menu .title { font-size: 58px; }
   #pause, #death, #end { background: rgba(20, 25, 35, 0.45); }
+  /* pausing while dead: the pause menu must sit ABOVE the death screen or the
+     death overlay silently eats every click and the game looks frozen */
+  #pause { z-index: 14; }
   .title {
     font-size: 74px; font-weight: bold; color: #fff;
     text-shadow: 4px 4px 0 #111, -3px 3px 0 #111, 3px -3px 0 #111, -3px -3px 0 #111, 6px 8px 0 rgba(0,0,0,0.3);

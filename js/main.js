@@ -102,7 +102,11 @@
     if (e.code === 'Digit2') G.arsenal.switchTo('sg');
     if (e.code === 'Digit3') G.arsenal.switchTo('sr');
     if (e.code === 'Digit4') G.arsenal.switchTo('rl');
-    if (e.code === 'Digit5') G.arsenal.callAirstrike();
+    if (e.code === 'Digit5') G.arsenal.switchTo('rev');
+    if (e.code === 'Digit6') G.arsenal.switchTo('smg');
+    if (e.code === 'Digit7') G.arsenal.switchTo('dmr');
+    if (e.code === 'Digit8') G.arsenal.switchTo('lmg');
+    if (e.code === 'KeyT') G.arsenal.callAirstrike();
   });
   document.addEventListener('keyup', (e) => {
     keys[e.code] = false;
@@ -125,7 +129,7 @@
   }, { passive: true });
   document.addEventListener('mousemove', (e) => {
     if (!pointerLocked || game.state !== 'playing') return;
-    const scopeK = G.arsenal.isScoped() ? 0.3 : 1;
+    const scopeK = G.arsenal.isScoped() ? (G.arsenal.currentId === 'dmr' ? 0.55 : 0.3) : 1;
     const s = settings.sens * 0.0021 * scopeK;
     player.yaw -= e.movementX * s;
     player.pitch -= e.movementY * s;
@@ -399,7 +403,7 @@
     camera.rotation.z = U.damp(camera.rotation.z, tilt + (player.slideT >= 0 ? -0.06 : 0), 8, dt);
     camera.position.set(player.pos.x, player.pos.y + player.eyeH, player.pos.z);
     // FOV
-    const adsZoom = { ar: 0.74, sg: 0.86, sr: 0.18, rl: 0.8 }[G.arsenal.currentId] || 0.8;
+    const adsZoom = { ar: 0.74, sg: 0.86, sr: 0.18, rl: 0.8, rev: 0.72, smg: 0.78, dmr: 0.42, lmg: 0.78 }[G.arsenal.currentId] || 0.8;
     let f = settings.fov;
     if (player.sprinting) f += 5;
     if (player.slideT >= 0) f += 7;
@@ -570,7 +574,7 @@
     if (player.streak === 5 && player.airstrikeEarned < 1) {
       player.airstrikeReady = true;
       player.airstrikeEarned = 1;
-      game.banner('AIRSTRIKE READY — PRESS [5]', '#ff9d3e');
+      game.banner('AIRSTRIKE READY — PRESS [T]', '#ff9d3e');
       G.audio.airstrikeCall();
     }
   }
@@ -997,7 +1001,7 @@
     $('fpsc').textContent = GAME.fps ? GAME.fps + ' FPS' : '';
     // streak
     const sEl = $('streak');
-    if (player.airstrikeReady) { sEl.textContent = 'AIRSTRIKE READY [5]'; sEl.style.color = '#ff9d3e'; }
+    if (player.airstrikeReady) { sEl.textContent = 'AIRSTRIKE READY [T]'; sEl.style.color = '#ff9d3e'; }
     else if (player.uavT > 0) { sEl.textContent = 'UAV ' + Math.ceil(player.uavT) + 's'; sEl.style.color = '#7dcfff'; }
     else if (player.streak >= 2) { sEl.textContent = 'STREAK ' + player.streak; sEl.style.color = '#ffd23e'; }
     else sEl.textContent = '';
@@ -1172,8 +1176,8 @@
       ['MOUSE', 'aim · LMB fire'], [L2 ? 'SHIFT' : 'RMB', 'aim down sights'],
       ['SPACE', 'jump / climb ladders'], [L2 ? 'C' : 'SHIFT / C', 'crouch (+sprint = slide)'],
       [L2 ? 'E' : 'G', 'grenade'], ['F', 'knife'],
-      ['R', 'reload'], ['1-4 · WHEEL', 'weapons — wheel reaches all 8'],
-      ['5', 'airstrike (5 streak)'], ['ESC', 'pause'],
+      ['R', 'reload'], ['1-8 · WHEEL', 'weapons'],
+      ['T', 'airstrike (5 streak)'], ['ESC', 'pause'],
     ];
     $('controlsList').innerHTML = rows.map(([k, txt]) => `<div><span class="key">${k}</span>${txt}</div>`).join('');
   }

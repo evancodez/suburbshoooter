@@ -136,6 +136,7 @@ G.world = (function () {
       inst: new Int32Array(o.cols * o.rows).fill(-1),
       alive: new Uint8Array(o.cols * o.rows),
       colMask: new Uint16Array(o.cols),
+      glassMask: new Uint16Array(o.cols), // windows block walking (not structure)
       supportDirty: false,
       tintColor: new THREE.Color(o.tint),
     };
@@ -162,7 +163,7 @@ G.world = (function () {
     // fn(c,r) -> type
     const batch = batches[wall.kind === 'window' ? 'siding' : wall.kind] || batches.siding;
     for (let c = 0; c < wall.cols; c++) {
-      let mask = 0;
+      let mask = 0, gmask = 0;
       for (let r = 0; r < wall.rows; r++) {
         const i = wall.idx(c, r);
         const ty = fn ? fn(c, r) : 0;
@@ -187,10 +188,13 @@ G.world = (function () {
             wall.ch * 0.98,
             (wall.dir === 'x' ? 0.07 : wall.cw) * 0.98,
             new THREE.Color(0xffffff));
-          // window doesn't add to colMask (see-through for LoS? it's solid for bullets but transparent visually)
+          // windows keep out of colMask (no load-bearing, no minimap) but DO
+          // stop you walking through them until they're broken
+          gmask |= (1 << r);
         }
       }
       wall.colMask[c] = mask;
+      wall.glassMask[c] = gmask;
     }
   }
 
@@ -218,6 +222,8 @@ G.world = (function () {
     const isGlass = wall.type[i] === 3;
     if (isGlass) {
       batches.glass.free(wall.inst[i]);
+      wall.glassMask[c] &= ~(1 << r);
+      navMarkDirtyAt(wall, c); // bots may path through the new opening
       wall.center(c, r, tmpV);
       tmpN.set(wall.dir === 'x' ? 0 : 1, 0, wall.dir === 'x' ? 1 : 0);
       G.fx.glassBreak(tmpV, tmpN);
@@ -563,7 +569,7 @@ G.world = (function () {
       const rTop = Math.min(w.rows - 1, Math.floor((1.85 - w.oy + 0) / w.ch));
       const rBot = Math.max(0, Math.floor((0.45) / w.ch));
       for (let c = Math.max(0, c0); c <= Math.min(w.cols - 1, c1); c++) {
-        const m = w.colMask[c];
+        const m = w.colMask[c] | w.glassMask[c]; // closed windows turn bots away too
         for (let r = rBot; r <= rTop; r++) if (m & (1 << r)) return true;
       }
     }
@@ -905,7 +911,7 @@ G.world = (function () {
           const c0 = Math.max(0, Math.floor((pos.x - radius - w.ox) / w.cw));
           const c1 = Math.min(w.cols - 1, Math.floor((pos.x + radius - w.ox) / w.cw));
           for (let c = c0; c <= c1; c++) {
-            if (!(w.colMask[c] & rangeMask)) continue;
+            if (!((w.colMask[c] | w.glassMask[c]) & rangeMask)) continue;
             // clamp-based push (handles wall ends)
             const cx0 = w.ox + c * w.cw, cx1 = cx0 + w.cw;
             const nx = U.clamp(pos.x, cx0, cx1);
@@ -926,7 +932,7 @@ G.world = (function () {
           const c0 = Math.max(0, Math.floor((pos.z - radius - w.oz) / w.cw));
           const c1 = Math.min(w.cols - 1, Math.floor((pos.z + radius - w.oz) / w.cw));
           for (let c = c0; c <= c1; c++) {
-            if (!(w.colMask[c] & rangeMask)) continue;
+            if (!((w.colMask[c] | w.glassMask[c]) & rangeMask)) continue;
             const cz0 = w.oz + c * w.cw, cz1 = cz0 + w.cw;
             const nz = U.clamp(pos.z, cz0, cz1);
             const nx = U.clamp(pos.x, w.ox - w.th / 2, w.ox + w.th / 2);
