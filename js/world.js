@@ -1596,6 +1596,8 @@ G.world = (function () {
 
   // ---------- verticality helpers ----------
   let stairGeos = [], steelGeos = [], rockGeos = [], frondGeos = [], palmTrunkGeos = [], sandGeos = [];
+  const stairRuns = []; // {bx,bz,baseY,tx,tz,topY} — bots chase prey up these
+  W.stairRuns = stairRuns;
   function buildStairs(x, z, dx, dz, width, n, stepH, stepD, baseY) {
     stepH = stepH || 0.3; stepD = stepD || 0.46; baseY = baseY || 0;
     for (let k = 0; k < n; k++) {
@@ -1608,6 +1610,12 @@ G.world = (function () {
       addCollider(cxk - sxk / 2, baseY, czk - szk / 2, cxk + sxk / 2, baseY + h, czk + szk / 2, { step: true });
       slabs.push({ minx: cxk - sxk / 2, minz: czk - szk / 2, maxx: cxk + sxk / 2, maxz: czk + szk / 2, top: baseY + h });
     }
+    // approach point one step before the run, exit point one step past the top
+    stairRuns.push({
+      bx: x - dx * stepD, bz: z - dz * stepD, baseY,
+      tx: x + dx * stepD * n, tz: z + dz * stepD * n,
+      topY: baseY + n * stepH,
+    });
   }
   function buildPlatform(cx, cz, w, d, topY, thick, geoList) {
     thick = thick || 0.18;
@@ -3494,6 +3502,7 @@ G.world = (function () {
     treeCanopyGeos.length = 0; poleGeos.length = 0; poleTops.length = 0; stairGeos.length = 0;
     steelGeos.length = 0; rockGeos.length = 0; frondGeos.length = 0; palmTrunkGeos.length = 0; sandGeos.length = 0;
     ladders.length = 0; lavas.length = 0; geysers.length = 0; groundHoles.length = 0;
+    stairRuns.length = 0;
     W.campSpots.length = 0;
     W.hillSpots.length = 0;
     W.bill = {}; W.billTotal = 0; W.chunksDestroyed = 0;

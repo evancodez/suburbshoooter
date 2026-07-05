@@ -133,6 +133,7 @@ G.botMgr = (function () {
       nadeCd: U.rand(6, 14), meleeCd: 0, rocketCd: U.rand(2, 5),
       coverPos: null, coverWait: 0,
       campSpot: null,
+      holdT: 0, stairTgt: null, stairPhase: 0,
       moveDir: new THREE.Vector3(), speedNow: 0, animPhase: 0,
       stuckT: 0, stuckN: 0, lastPos: new THREE.Vector3(),
       vault: null,
@@ -237,7 +238,8 @@ G.botMgr = (function () {
     bot.campSpot = null;
     bot.tgt = null;
     bot.path = null; bot.fallT = -1; bot.gibbed = false; bot.vault = null;
-    bot.mag = 30; bot.reloadT = 0; bot.burstLeft = 0;
+    bot.holdT = 0; bot.stairTgt = null; bot.stairPhase = 0; bot.climb = null;
+    bot.mag = botMag(bot.weapon); bot.reloadT = 0; bot.burstLeft = 0;
     bot.canSee = false; bot.seeT = 0; bot.alertT = -1;
     bot.pathBias = 0.85 + (bot.idx % 5) * 0.09;
     bot.netX = x; bot.netZ = z;
@@ -328,12 +330,17 @@ G.botMgr = (function () {
   }
 
   // ---------- shooting ----------
+  const WPN_TAGS = { sg: 'SG', rl: 'ROCKET', sr: 'SR', rev: 'REVOLVER', smg: 'SMG', dmr: 'DMR', lmg: 'LMG' };
   function attackerInfo(bot) {
-    return { attacker: bot, attackerPos: bot.group.position, tag: bot.weapon === 'sg' ? 'SG' : bot.weapon === 'rl' ? 'ROCKET' : bot.weapon === 'sr' ? 'SR' : 'AR' };
+    return { attacker: bot, attackerPos: bot.group.position, tag: WPN_TAGS[bot.weapon] || 'AR' };
   }
   function botDmg(bot, hitT) {
     if (bot.weapon === 'sg') return Math.max(3, bot.cfg.dmg * 0.7 * (1 - hitT / 26));
-    if (bot.weapon === 'sr') return bot.cfg.dmg * 3.2; // slow, heavy single taps
+    if (bot.weapon === 'sr') return bot.cfg.dmg * 3.2;  // slow, heavy single taps
+    if (bot.weapon === 'rev') return bot.cfg.dmg * 1.5; // deliberate six-shooter
+    if (bot.weapon === 'dmr') return bot.cfg.dmg * 2.0; // marksman pace
+    if (bot.weapon === 'smg') return Math.max(2, bot.cfg.dmg * 0.55 * (1 - hitT / 40)); // spray, falls off
+    if (bot.weapon === 'lmg') return bot.cfg.dmg * 0.85;
     return bot.cfg.dmg;
   }
   function botShoot(bot) {
@@ -381,13 +388,16 @@ G.botMgr = (function () {
     }
     tmpV.set(rayO.x + rayD.x * 0.3, muzY, rayO.z + rayD.z * 0.3);
     G.fx.muzzle(tmpV, 0.5);
-    G.audio.shot(bot.weapon === 'sg' ? 'sg' : bot.weapon === 'sr' ? 'sr' : 'bot', bp);
+    G.audio.shot(bot.weapon === 'ar' ? 'bot' : bot.weapon, bp);
     bot.mag--;
     bot.lastShotT = 0;
     bot.radarT = 2.6;
-    if (bot.mag <= 0) { bot.reloadT = bot.weapon === 'sg' ? 2.6 : bot.weapon === 'sr' ? 2.8 : 2.1; bot.mag = botMag(bot.weapon); startCover(bot); }
+    if (bot.mag <= 0) { bot.reloadT = botReload(bot.weapon); bot.mag = botMag(bot.weapon); startCover(bot); }
   }
-  function botMag(w) { return w === 'sg' ? 6 : w === 'sr' ? 5 : 30; }
+  const BOT_MAGS = { sg: 6, sr: 5, rev: 6, smg: 40, dmr: 10, lmg: 60 };
+  const BOT_RELOADS = { sg: 2.6, sr: 2.8, rev: 2.3, smg: 1.9, dmr: 2.2, lmg: 3.4 };
+  function botMag(w) { return BOT_MAGS[w] || 30; }
+  function botReload(w) { return BOT_RELOADS[w] || 2.1; }
 
   function botRocket(bot, dist) {
     const t = bot.tgt;
@@ -415,30 +425,39 @@ G.botMgr = (function () {
     if (bot.reloadT > 0 || bot.staggerT > 0) return;
     if (bot.weapon === 'rl') {
       bot.rocketCd -= dt;
-      if (bot.rocketCd <= 0 && dist > 9 && dist < 42) botRocket(bot, dist);
+      // cap airborne bot rockets — gun-game endgames put everyone on launchers
+      // and the resulting explosion spam tanked framerates around deaths
+      if (bot.rocketCd <= 0 && dist > 9 && dist < 42 &&
+          (!G.arsenal.rockets || G.arsenal.rockets.length < 3)) botRocket(bot, dist);
       return;
     }
-    if (bot.weapon === 'sr') { // deliberate single taps, any range
+    // deliberate single-tap weapons (any range)
+    if (bot.weapon === 'sr' || bot.weapon === 'dmr' || bot.weapon === 'rev') {
+      if (bot.weapon === 'rev' && dist > 34) return; // six-shooter has limits
       bot.fireCd -= dt;
       if (bot.fireCd <= 0) {
         botShoot(bot);
-        bot.fireCd = U.rand(1.6, 2.4);
+        bot.fireCd = bot.weapon === 'sr' ? U.rand(1.6, 2.4) : bot.weapon === 'dmr' ? U.rand(0.7, 1.0) : U.rand(0.45, 0.65);
       }
       return;
     }
     if (bot.weapon === 'sg' && dist > 20) return;
+    if (bot.weapon === 'smg' && dist > 28) return;
     if (bot.burstLeft > 0) {
       bot.fireCd -= dt;
       if (bot.fireCd <= 0) {
         botShoot(bot);
         bot.burstLeft--;
-        bot.fireCd = bot.weapon === 'sg' ? U.rand(0.8, 1.1) : 0.105;
-        if (bot.burstLeft <= 0) bot.burstPause = U.rand(0.45, 1.0);
+        bot.fireCd = bot.weapon === 'sg' ? U.rand(0.8, 1.1) : bot.weapon === 'smg' ? 0.062 : bot.weapon === 'lmg' ? 0.115 : 0.105;
+        if (bot.burstLeft <= 0) bot.burstPause = bot.weapon === 'lmg' ? U.rand(0.7, 1.3) : U.rand(0.45, 1.0);
       }
     } else {
       bot.burstPause -= dt;
       if (bot.burstPause <= 0) {
-        bot.burstLeft = bot.weapon === 'sg' ? U.randi(1, 2) : U.randi(bot.cfg.burstMin, bot.cfg.burstMax);
+        bot.burstLeft = bot.weapon === 'sg' ? U.randi(1, 2)
+          : bot.weapon === 'smg' ? U.randi(bot.cfg.burstMin + 2, bot.cfg.burstMax + 4)
+          : bot.weapon === 'lmg' ? U.randi(bot.cfg.burstMin + 3, bot.cfg.burstMax + 6)
+          : U.randi(bot.cfg.burstMin, bot.cfg.burstMax);
         bot.fireCd = 0.02;
       }
     }
@@ -585,7 +604,7 @@ G.botMgr = (function () {
       const L = bot.climb;
       bp.x = U.damp(bp.x, L.cx + L.fx * 0.45, 10, dt);
       bp.z = U.damp(bp.z, L.cz + L.fz * 0.45, 10, dt);
-      bp.y += 2.6 * dt;
+      bp.y += 3.0 * dt;
       bot.speedNow = 1.2;
       bot.animPhase += dt * 6;
       bot.yaw = bot.targetYaw = Math.atan2(-L.fx, -L.fz); // face the rungs
@@ -597,13 +616,15 @@ G.botMgr = (function () {
           L.topY >= l2.baseY - 0.3 && L.topY < l2.topY - 0.1);
         if (nxt) {
           bot.climb = nxt;
-        } else { // true crest: step onto the deck
-          bp.x = L.cx - L.fx * 1.0;
-          bp.z = L.cz - L.fz * 1.0;
+        } else { // true crest: step well onto the deck and take a beat —
+          // charging straight off the far edge looked like falling off the ladder
+          bp.x = L.cx - L.fx * 1.3;
+          bp.z = L.cz - L.fz * 1.3;
           bp.y = G.world.standHeightAt(bp.x, bp.z, L.topY + 0.4);
           bot.climb = null;
           bot.path = null;
           bot.ladderCd = 0.6;
+          bot.holdT = 0.45;
         }
       }
       animate(bot, dt, false, null, 10);
@@ -627,13 +648,15 @@ G.botMgr = (function () {
     const t = bot.tgt;
     const dist = tgtValid(bot) ? U.dist2d(bp.x, bp.z, t.pos.x, t.pos.z) : 99;
 
-    // prey is up on a deck somewhere: find a ladder and go get them
-    // (any upward ladder works — chained climbs re-trigger on the next floor;
-    //  zero-g crews just fly, no ladders needed)
-    if (!G.world.zeroG && !bot.climb && bot.state !== 'ladder' && bot.ladderCd <= 0 && tgtValid(bot) &&
-        (bot.state === 'hunt' || bot.state === 'investigate' || (bot.state === 'combat' && !bot.canSee)) &&
-        t.pos.y - bp.y > 2.2 && dist < 26) {
-      let bestL = null, bestScore = 26;
+    // prey is up on a deck somewhere: find a ladder OR a staircase and go get
+    // them (chained climbs re-trigger on the next floor; zero-g crews just fly)
+    if (!G.world.zeroG && !bot.climb && bot.state !== 'ladder' && bot.state !== 'stairs' && bot.ladderCd <= 0 && tgtValid(bot) &&
+        (bot.state === 'hunt' || bot.state === 'investigate' ||
+         (bot.state === 'combat' && (!bot.canSee || (t.pos.y - bp.y > 3 && dist > 8))) ||
+         // wandering right underneath someone: footsteps overhead are a giveaway
+         (bot.state === 'wander' && dist < 22)) &&
+        t.pos.y - bp.y > 2.2 && dist < 34) {
+      let bestL = null, bestS = null, bestScore = 34;
       for (const L of (G.world.ladders || [])) {
         if (L.topY < bp.y + 1.8) continue;              // must lead upward from here
         if (L.topY > t.pos.y + 3.5) continue;           // not way past them
@@ -641,11 +664,24 @@ G.botMgr = (function () {
         // height progress toward the prey matters more than a short walk
         const score = U.dist2d(bp.x, bp.z, L.cx + L.fx * 0.5, L.cz + L.fz * 0.5) * 0.6 +
                       Math.abs(L.topY - t.pos.y) * 2.5;
-        if (score < bestScore) { bestScore = score; bestL = L; }
+        if (score < bestScore) { bestScore = score; bestL = L; bestS = null; }
+      }
+      for (const S of (G.world.stairRuns || [])) {
+        if (S.topY < bp.y + 1.8) continue;
+        if (S.topY > t.pos.y + 3.5) continue;
+        if (Math.abs(S.baseY - bp.y) > 1.6) continue;
+        const score = U.dist2d(bp.x, bp.z, S.bx, S.bz) * 0.6 + Math.abs(S.topY - t.pos.y) * 2.5 + 1;
+        if (score < bestScore) { bestScore = score; bestS = S; bestL = null; }
       }
       if (bestL) {
         bot.state = 'ladder';
         bot.ladderTgt = bestL;
+        bot.stateT = 0;
+        bot.path = null;
+      } else if (bestS) {
+        bot.state = 'stairs';
+        bot.stairTgt = bestS;
+        bot.stairPhase = 1;
         bot.stateT = 0;
         bot.path = null;
       }
@@ -755,9 +791,10 @@ G.botMgr = (function () {
           const fx = Math.sin(bot.targetYaw), fz = Math.cos(bot.targetYaw);
           let ax = fz * bot.strafeDir, az = -fx * bot.strafeDir;
           let fwd = 0;
-          if (bot.weapon === 'sg') fwd = dist > 9 ? 1 : (dist < 4 ? -0.3 : 0.2);
+          if (bot.weapon === 'sg' || bot.weapon === 'smg') fwd = dist > 9 ? 1 : (dist < 4 ? -0.3 : 0.2); // close-range guns push in
           else if (bot.weapon === 'rl') fwd = dist > 30 ? 0.7 : (dist < 13 ? -0.9 : 0); // keep rocket distance
-          else if (bot.weapon === 'sr') fwd = dist > 34 ? 0.5 : (dist < 14 ? -0.8 : 0); // snipers keep their distance
+          else if (bot.weapon === 'sr' || bot.weapon === 'dmr') fwd = dist > 34 ? 0.5 : (dist < 14 ? -0.8 : 0); // marksmen keep their distance
+          else if (bot.weapon === 'lmg') fwd = dist > 30 ? 0.6 : 0; // gunners hold ground and hose
           else if (bot.arche === 'camper') fwd = 0;
           else fwd = dist > 26 ? 0.8 : (dist < 9 ? -0.7 : 0);
           ax += fx * fwd; az += fz * fwd;
@@ -833,6 +870,32 @@ G.botMgr = (function () {
         }
         break;
       }
+      case 'stairs': {
+        const S = bot.stairTgt;
+        bot.stateT += dt;
+        if (!S || bot.stateT > 12) { bot.state = 'hunt'; bot.stairTgt = null; bot.stairPhase = 0; bot.ladderCd = 5; bot.path = null; break; }
+        if (bot.stairPhase === 1) { // walk to the bottom step
+          bot.repathT -= dt;
+          if (!bot.path || bot.repathT <= 0) setPath(bot, S.bx, S.bz);
+          followPath(bot, baseSpeed * 1.25);
+          const nearBase = U.dist2d(bp.x, bp.z, S.bx, S.bz) < 1.5 && Math.abs(bp.y - S.baseY) < 1.4;
+          if (nearBase || bp.y > S.baseY + 0.6) {
+            bot.stairPhase = 2;
+            bot.path = [{ x: S.tx, z: S.tz }]; // straight up the run
+            bot.pathI = 0;
+          }
+        } else { // climb the steps
+          followPath(bot, baseSpeed);
+          if (Math.abs(bp.y - S.topY) < 0.6 && U.dist2d(bp.x, bp.z, S.tx, S.tz) < 1.3) {
+            bot.state = 'hunt';
+            bot.stairTgt = null; bot.stairPhase = 0; bot.path = null;
+            bot.ladderCd = 1.2;
+            bot.holdT = 0.35; // land, look, then move
+          }
+        }
+        if (bot.moveDir.lengthSq() > 0) bot.targetYaw = Math.atan2(bot.moveDir.x, bot.moveDir.z);
+        break;
+      }
     }
 
     if (bot.fleeT > 0) {
@@ -860,6 +923,33 @@ G.botMgr = (function () {
       const aheadX = bp.x + bot.moveDir.x * 3, aheadZ = bp.z + bot.moveDir.z * 3;
       if (inDanger(aheadX, aheadZ, 0) && !inDanger(bp.x, bp.z, 0)) {
         bot.moveDir.set(-bot.moveDir.z, 0, bot.moveDir.x); // slide around the edge
+      }
+    }
+
+    // just topped a ladder or staircase: plant the feet for a beat
+    if (bot.holdT > 0 && bot.fleeT <= 0) {
+      bot.holdT -= dt;
+      bot.moveDir.set(0, 0, 0);
+      bot.speedNow = 0;
+    }
+    // edge guard: bots snap to the floor below them, so strolling past a roof
+    // edge used to read as "fell off the ladder" — check the drop first
+    if (!G.world.zeroG && bp.y > 1.5 && bot.fleeT <= 0 && bot.moveDir.lengthSq() > 0.001 && bot.speedNow > 0) {
+      const l0 = bot.moveDir.length();
+      const ax = bp.x + (bot.moveDir.x / l0) * 0.9, az = bp.z + (bot.moveDir.z / l0) * 0.9;
+      const drop = bp.y - G.world.standHeightAt(ax, az, bp.y + 0.5);
+      if (drop > 3.2) {
+        // dropping ON PURPOSE is allowed: prey below, close, and I can see them
+        const wantDrop = tgtValid(bot) && bot.canSee && t.pos.y < bp.y - 2 && dist < 13;
+        if (!wantDrop) {
+          const sgn = bot.idx % 2 ? 1 : -1; // consistent per bot, no dithering
+          bot.moveDir.set(-bot.moveDir.z * sgn, 0, bot.moveDir.x * sgn);
+          const ax2 = bp.x + (bot.moveDir.x / l0) * 0.9, az2 = bp.z + (bot.moveDir.z / l0) * 0.9;
+          if (bp.y - G.world.standHeightAt(ax2, az2, bp.y + 0.5) > 3.2) {
+            bot.moveDir.set(0, 0, 0); // both ways off the roof: stop and rethink
+            bot.repathT = Math.min(bot.repathT, 0.4);
+          }
+        }
       }
     }
 
@@ -904,6 +994,7 @@ G.botMgr = (function () {
         if (bot.stuckN === 2) {
           // plan B: approach from a different angle instead of ramming the same wall
           if (bot.state === 'ladder') { bot.state = 'hunt'; bot.ladderTgt = null; bot.ladderCd = 5; }
+          if (bot.state === 'stairs') { bot.state = 'hunt'; bot.stairTgt = null; bot.stairPhase = 0; bot.ladderCd = 5; }
           bot.lastKnown.x += U.rand(-7, 7);
           bot.lastKnown.z += U.rand(-7, 7);
           bot.pathBias = 0.7 + Math.random() * 0.8; // different heuristic = different corridor
@@ -1034,7 +1125,9 @@ G.botMgr = (function () {
       let rockets = n >= 9 ? 2 : n >= 6 ? 1 : (n >= 3 && Math.random() < 0.4 ? 1 : 0);
       for (let i = 0; i < n; i++) {
         const arche = arches[i % arches.length];
-        let weapon = arche === 'rusher' ? 'sg' : 'ar';
+        // some texture in the lineup: rushers split sg/smg, campers sometimes scope a dmr
+        let weapon = arche === 'rusher' ? (Math.random() < 0.5 ? 'sg' : 'smg')
+          : arche === 'camper' && Math.random() < 0.3 ? 'dmr' : 'ar';
         if (rockets > 0 && arche === 'soldier') { weapon = 'rl'; rockets--; }
         roster.push({ name: names[ni++ % names.length], team, arche, weapon });
       }
@@ -1042,7 +1135,7 @@ G.botMgr = (function () {
     return roster;
   };
   // gun game weapon ladder — must match GUN_LADDER / GUN_PER in main.js
-  const GUN_LADDER = ['ar', 'sg', 'sr', 'rl'], GUN_PER = 2;
+  const GUN_LADDER = ['rev', 'smg', 'ar', 'sg', 'dmr', 'lmg', 'sr', 'rl'], GUN_PER = 2;
   M.update = function (dt) {
     for (let i = dangers.length - 1; i >= 0; i--) {
       dangers[i].t -= dt;
@@ -1054,7 +1147,7 @@ G.botMgr = (function () {
         const w = GUN_LADDER[Math.min(GUN_LADDER.length - 1, Math.floor(b.kills / GUN_PER))];
         if (b.weapon !== w) {
           b.weapon = w;
-          b.mag = w === 'sg' ? 6 : w === 'sr' ? 5 : w === 'rl' ? 1 : 30;
+          b.mag = botMag(w);
           b.burstLeft = 0; b.reloadT = 0;
           b.rocketCd = Math.max(b.rocketCd, 1.2);
         }

@@ -273,7 +273,7 @@ G.net = (function () {
           tmpV.set(rp.pos.x, rp.pos.y + 1.45, rp.pos.z);
           G.fx.muzzle(tmpV, 0.45);
           G.fx.tracer(tmpV, new THREE.Vector3(msg.x, msg.y, msg.z), 0.09);
-          G.audio.shot(msg.k === 'sr' ? 'sr' : msg.k === 'sg' ? 'sg' : 'bot', rp.pos);
+          G.audio.shot(['sr', 'sg', 'rev', 'smg', 'dmr', 'lmg'].includes(msg.k) ? msg.k : 'bot', rp.pos);
           if (N.isHost && G.botMgr) G.botMgr.onNoise(rp.pos, 48);
         }
         if (N.isHost) { msg.id = id; bc(msg, fromConn); }

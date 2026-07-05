@@ -220,6 +220,19 @@
   /* five maps need two rows */
   #mapSel, #lobbyMap { flex-wrap: wrap; }
   #mapSel button, #lobbyMap button { font-size: 13.5px; padding: 5px 10px; }
+  /* main menu: two columns, everything wraps, nothing pokes out the side */
+  #menu .title { font-size: 44px; }
+  #menu .subtitle { font-size: 18px; }
+  #menu { gap: 10px; padding: 14px 0 30px; }
+  #menu .panel { max-width: none; width: min(920px, calc(100vw - 36px)); box-sizing: border-box; }
+  #menuGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 34px; align-items: start; }
+  @media (max-width: 900px) { #menuGrid { grid-template-columns: 1fr; } }
+  #menu .panel h3 { font-size: 14px; margin: 9px 0 4px; }
+  #modeSel, #diffSel, #layoutSel, #lobbyMode { flex-wrap: wrap; }
+  #modeSel button, #lobbyMode button { font-size: 12.5px; padding: 5px 9px; }
+  #diffSel button, #layoutSel button { font-size: 13.5px; padding: 5px 10px; }
+  #menu .bigbtn { margin-top: 2px; }
+  #menu .controls { font-size: 12px; gap: 4px 14px; }
   #deathKiller { color: #ff5544; }
   .deathbig { font-size: 46px; font-weight: bold; color: #ff5544; text-shadow: 3px 3px 0 #111; transform: rotate(-1deg); }
   .deathsub { font-size: 20px; color: #fff; text-shadow: 2px 2px 0 #111; font-weight: bold; }
@@ -316,46 +329,52 @@
   <div class="subtitle">~ suburban warfare ~</div>
   <button class="bigbtn" id="deployBtn">DEPLOY</button>
   <div class="panel">
-    <h3>GAME MODE</h3>
-    <div class="btnrow" id="modeSel">
-      <button data-v="vsworld" class="sel">YOU VS WORLD</button><button data-v="tdm">TEAM DEATHMATCH</button><button data-v="ffa">FREE-FOR-ALL</button><button data-v="gun">GUN GAME</button><button data-v="koth">KING OF THE HILL</button>
+    <div id="menuGrid">
+      <div>
+        <h3 style="margin-top:0">GAME MODE</h3>
+        <div class="btnrow" id="modeSel">
+          <button data-v="vsworld" class="sel">YOU VS WORLD</button><button data-v="tdm">TEAM DEATHMATCH</button><button data-v="ffa">FREE-FOR-ALL</button><button data-v="gun">GUN GAME</button><button data-v="koth">KING OF THE HILL</button>
+        </div>
+        <div id="modeDesc" style="font-size:12px; color:#666; margin:3px 0 0"></div>
+        <h3>MAP</h3>
+        <div class="btnrow" id="mapSel">
+          <button data-v="suburbs" class="sel">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button><button data-v="gulch">GOLD RUSH GULCH</button>
+        </div>
+        <h3>MATCH SETUP</h3>
+        <div class="mprow" style="flex-wrap:wrap; gap:8px 12px">
+          <span class="stepper" id="allyWrap" style="display:none"><b>ALLY BOTS</b> <input type="number" class="numin" id="botsAllyInput" min="0" max="20" step="1"></span>
+          <span class="stepper"><b id="botCountLabel">BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
+          <span class="stepper" id="targetWrap"><b id="targetLabel">KILLS TO WIN</b> <input type="number" class="numin" id="targetInput" min="1" max="500" step="1"></span>
+          <span class="stepper"><b>MINUTES</b> <input type="number" class="numin" id="timeInput" min="1" max="90" step="1"></span>
+        </div>
+        <h3>DIFFICULTY</h3>
+        <div class="btnrow" id="diffSel">
+          <button data-v="easy">LIL TIMMY</button><button data-v="normal" class="sel">SWEATY</button><button data-v="hard">NO LIFE</button>
+        </div>
+        <h3>CONTROL LAYOUT</h3>
+        <div class="btnrow" id="layoutSel">
+          <button data-v="1" class="sel">1: MOUSE</button><button data-v="2">2: TOUCHPAD</button>
+        </div>
+      </div>
+      <div>
+        <h3 style="margin-top:0">MULTIPLAYER — play with friends</h3>
+        <div class="mprow">
+          <input type="text" id="nameInput" maxlength="14" placeholder="your name">
+          <button class="btnrow-btn bigbtn" id="hostBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#7dcfff">HOST</button>
+        </div>
+        <div class="mprow">
+          <input type="text" id="joinInput" placeholder="paste game link or code">
+          <button class="bigbtn" id="joinBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#fff">JOIN</button>
+        </div>
+        <div id="mpStatus"></div>
+        <h3>SETTINGS</h3>
+        <div class="sliderrow">SENS <input type="range" id="sensSlider" min="0.2" max="3" step="0.05"><span class="val" id="sensSliderVal">1.00</span></div>
+        <div class="sliderrow">VOL <input type="range" id="volSlider" min="0" max="1" step="0.05"><span class="val" id="volSliderVal">80%</span></div>
+        <div class="sliderrow">FOV <input type="range" id="fovSlider" min="60" max="105" step="1"><span class="val" id="fovSliderVal">78°</span></div>
+        <h3>CONTROLS</h3>
+        <div class="controls" id="controlsList"></div>
+      </div>
     </div>
-    <div id="modeDesc" style="font-size:12.5px; color:#666; margin:2px 0 4px"></div>
-    <h3>MAP</h3>
-    <div class="btnrow" id="mapSel">
-      <button data-v="suburbs" class="sel">SUBURBS</button><button data-v="island">VOLCANO ISLAND</button><button data-v="station">MERIDIAN STATION</button><button data-v="city">DOWNTOWN</button><button data-v="gulch">GOLD RUSH GULCH</button>
-    </div>
-    <h3>MATCH SETUP</h3>
-    <div class="mprow" style="flex-wrap:wrap">
-      <span class="stepper" id="allyWrap" style="display:none; margin-right:10px"><b>ALLY BOTS</b> <input type="number" class="numin" id="botsAllyInput" min="0" max="20" step="1"></span>
-      <span class="stepper"><b id="botCountLabel">BOTS</b> <input type="number" class="numin" id="botCountInput" min="0" max="40" step="1"></span>
-      <span class="stepper" id="targetWrap" style="margin-left:10px"><b id="targetLabel">KILLS TO WIN</b> <input type="number" class="numin" id="targetInput" min="1" max="500" step="1"></span>
-      <span class="stepper" style="margin-left:10px"><b>MINUTES</b> <input type="number" class="numin" id="timeInput" min="1" max="90" step="1"></span>
-    </div>
-    <h3>DIFFICULTY</h3>
-    <div class="btnrow" id="diffSel">
-      <button data-v="easy">LIL TIMMY</button><button data-v="normal" class="sel">SWEATY</button><button data-v="hard">NO LIFE</button>
-    </div>
-    <h3>CONTROL LAYOUT</h3>
-    <div class="btnrow" id="layoutSel">
-      <button data-v="1" class="sel">1: MOUSE</button><button data-v="2">2: TOUCHPAD</button>
-    </div>
-    <h3>MULTIPLAYER — play with friends</h3>
-    <div class="mprow">
-      <input type="text" id="nameInput" maxlength="14" placeholder="your name">
-      <button class="btnrow-btn bigbtn" id="hostBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#7dcfff">HOST</button>
-    </div>
-    <div class="mprow">
-      <input type="text" id="joinInput" placeholder="paste game link or code">
-      <button class="bigbtn" id="joinBtn" style="font-size:15px; padding:5px 14px; margin:0; background:#fff">JOIN</button>
-    </div>
-    <div id="mpStatus"></div>
-    <h3>SETTINGS</h3>
-    <div class="sliderrow">SENS <input type="range" id="sensSlider" min="0.2" max="3" step="0.05"><span class="val" id="sensSliderVal">1.00</span></div>
-    <div class="sliderrow">VOL <input type="range" id="volSlider" min="0" max="1" step="0.05"><span class="val" id="volSliderVal">80%</span></div>
-    <div class="sliderrow">FOV <input type="range" id="fovSlider" min="60" max="105" step="1"><span class="val" id="fovSliderVal">78°</span></div>
-    <h3>CONTROLS</h3>
-    <div class="controls" id="controlsList"></div>
   </div>
   <div class="tip">everything is destructible. property damage is encouraged.</div>
 </div>

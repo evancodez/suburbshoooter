@@ -14,12 +14,25 @@ G.arsenal = (function () {
           spread: 5.5, bloomPer: 0, bloomMax: 6, adsMul: 0.012, recoil: 3.4, chunkDmg: 40, reload: 2.9, pellets: 1 },
     rl:  { name: 'HOA VIOLATION', kind: 'rl', auto: false, interval: 1.1, mag: 1, reserve: 5,
           spread: 0.4, bloomPer: 0, bloomMax: 1, adsMul: 0.5, recoil: 4, reload: 2.3, pellets: 0 },
+    // the second rack: distinct roles, tuned around the classics
+    rev: { name: 'SIX IRON', kind: 'rev', auto: false, interval: 0.34, dmg: 42, headMul: 2.4, mag: 6, reserve: 36,
+          spread: 1.0, bloomPer: 0.55, bloomMax: 3.2, adsMul: 0.35, recoil: 2.0, chunkDmg: 14, reload: 2.2, pellets: 1,
+          falloff: 70, falloffStart: 16, falloffFloor: 0.5 },
+    smg: { name: 'LEAF BLOWER', kind: 'smg', auto: true, interval: 0.055, dmg: 15, headMul: 2.0, mag: 42, reserve: 210,
+          spread: 1.7, bloomPer: 0.5, bloomMax: 5.5, adsMul: 0.45, recoil: 0.9, chunkDmg: 8, reload: 1.7, pellets: 1,
+          falloff: 45, falloffStart: 9, falloffFloor: 0.35 },
+    dmr: { name: 'PROPERTY LINE', kind: 'dmr', auto: false, interval: 0.3, dmg: 46, headMul: 2.0, mag: 12, reserve: 60,
+          spread: 0.5, bloomPer: 0.9, bloomMax: 3.5, adsMul: 0.15, recoil: 1.9, chunkDmg: 22, reload: 2.2, pellets: 1,
+          falloff: 140, falloffStart: 40, falloffFloor: 0.7 },
+    lmg: { name: 'LAWN ENFORCER', kind: 'lmg', auto: true, interval: 0.1, dmg: 24, headMul: 2.0, mag: 80, reserve: 160,
+          spread: 2.2, bloomPer: 0.35, bloomMax: 5, adsMul: 0.5, recoil: 1.7, chunkDmg: 26, reload: 3.4, pellets: 1,
+          falloff: 90, falloffStart: 22, falloffFloor: 0.5 },
   };
   function rangeDmg(def, base, dist) {
     if (!def.falloff) return base;
     return base * U.clamp(1 - Math.max(0, dist - (def.falloffStart || 0)) / def.falloff, def.falloffFloor || 0.25, 1);
   }
-  const ORDER = ['ar', 'sg', 'sr', 'rl'];
+  const ORDER = ['ar', 'sg', 'sr', 'rl', 'rev', 'smg', 'dmr', 'lmg']; // keys 1-4 = classics, wheel reaches the rest
 
   let camera, vmRoot;
   const state = {};
@@ -102,6 +115,49 @@ G.arsenal = (function () {
     const rlSight = box(0.02, 0.09, 0.02, gunMat); rlSight.position.set(0, 0.12, -0.15); rl.add(rlSight);
     models.rl = rl;
 
+    // --- Revolver ---
+    const rev = new THREE.Group();
+    const revBody = box(0.06, 0.095, 0.3, gunMat); revBody.position.z = -0.06; rev.add(revBody);
+    const revBarrel = box(0.04, 0.05, 0.22, gunMat2); revBarrel.position.set(0, 0.015, -0.3); rev.add(revBarrel);
+    const cylinderR = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.052, 0.11, 8), gunMat2);
+    cylinderR.rotation.x = Math.PI / 2; cylinderR.position.set(0, -0.01, -0.1); rev.add(cylinderR);
+    const revGrip = box(0.05, 0.13, 0.07, woodMat); revGrip.position.set(0, -0.1, 0.08); revGrip.rotation.x = 0.35; rev.add(revGrip);
+    const revHammer = box(0.02, 0.05, 0.03, gunMat2); revHammer.position.set(0, 0.06, 0.06); rev.add(revHammer);
+    models.rev = rev;
+
+    // --- SMG ---
+    const smg = new THREE.Group();
+    const smgBody = box(0.07, 0.11, 0.42, gunMat); smg.add(smgBody);
+    const smgBarrel = box(0.04, 0.04, 0.16, gunMat2); smgBarrel.position.set(0, 0.02, -0.28); smg.add(smgBarrel);
+    const smgMag = box(0.045, 0.2, 0.07, gunMat2); smgMag.position.set(0, -0.15, -0.04); smg.add(smgMag);
+    const smgGrip = box(0.05, 0.11, 0.06, gunMat2); smgGrip.position.set(0, -0.1, 0.13); smg.add(smgGrip);
+    const smgStock = box(0.025, 0.03, 0.2, gunMat2); smgStock.position.set(0, 0.02, 0.3); smg.add(smgStock);
+    smg.userData.mag = smgMag;
+    models.smg = smg;
+
+    // --- DMR ---
+    const dmr = new THREE.Group();
+    const dmrBody = box(0.065, 0.1, 0.66, camoMat); dmr.add(dmrBody);
+    const dmrBarrel = box(0.035, 0.035, 0.4, gunMat2); dmrBarrel.position.set(0, 0.02, -0.5); dmr.add(dmrBarrel);
+    const dmrStock = box(0.055, 0.1, 0.24, camoMat); dmrStock.position.set(0, -0.01, 0.4); dmr.add(dmrStock);
+    const dmrMag = box(0.045, 0.13, 0.08, gunMat2); dmrMag.position.set(0, -0.11, 0.02); dmr.add(dmrMag);
+    const dmrScope = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.2, 8), gunMat2);
+    dmrScope.rotation.x = Math.PI / 2; dmrScope.position.set(0, 0.095, -0.06); dmr.add(dmrScope);
+    dmr.userData.mag = dmrMag;
+    models.dmr = dmr;
+
+    // --- LMG ---
+    const lmg = new THREE.Group();
+    const lmgBody = box(0.09, 0.14, 0.6, gunMat); lmg.add(lmgBody);
+    const lmgBarrel = box(0.05, 0.05, 0.38, gunMat2); lmgBarrel.position.set(0, 0.03, -0.46); lmg.add(lmgBarrel);
+    const lmgShroud = box(0.07, 0.07, 0.2, gunMat2); lmgShroud.position.set(0, 0.03, -0.3); lmg.add(lmgShroud);
+    const lmgBox = box(0.09, 0.14, 0.16, greenMat); lmgBox.position.set(0, -0.14, 0.02); lmg.add(lmgBox);
+    const lmgStock = box(0.06, 0.11, 0.2, gunMat2); lmgStock.position.set(0, -0.01, 0.38); lmg.add(lmgStock);
+    const bipodL = box(0.015, 0.12, 0.015, gunMat2); bipodL.position.set(-0.04, -0.1, -0.5); bipodL.rotation.z = 0.25; lmg.add(bipodL);
+    const bipodR = box(0.015, 0.12, 0.015, gunMat2); bipodR.position.set(0.04, -0.1, -0.5); bipodR.rotation.z = -0.25; lmg.add(bipodR);
+    lmg.userData.mag = lmgBox;
+    models.lmg = lmg;
+
     // arms (camo sleeves) shared: trigger arm from bottom-right, support arm under barrel
     for (const id of ORDER) {
       const m = models[id];
@@ -123,7 +179,10 @@ G.arsenal = (function () {
   }
 
   const HIP = { x: 0.33, y: -0.31, z: -0.62 };
-  const ADS = { ar: { x: 0, y: -0.118, z: -0.46 }, sg: { x: 0, y: -0.08, z: -0.54 }, sr: { x: 0, y: -0.115, z: -0.5 }, rl: { x: 0.14, y: -0.14, z: -0.52 } };
+  const ADS = {
+    ar: { x: 0, y: -0.118, z: -0.46 }, sg: { x: 0, y: -0.08, z: -0.54 }, sr: { x: 0, y: -0.115, z: -0.5 }, rl: { x: 0.14, y: -0.14, z: -0.52 },
+    rev: { x: 0, y: -0.1, z: -0.4 }, smg: { x: 0, y: -0.105, z: -0.42 }, dmr: { x: 0, y: -0.128, z: -0.48 }, lmg: { x: 0, y: -0.125, z: -0.5 },
+  };
 
   // ---------- init ----------
   A.init = function (cam) {
@@ -520,6 +579,10 @@ G.arsenal = (function () {
     state.ar.reserve = Math.min(300, state.ar.reserve + 12);
     state.sg.reserve = Math.min(60, state.sg.reserve + 3);
     state.sr.reserve = Math.min(40, state.sr.reserve + 2);
+    state.rev.reserve = Math.min(48, state.rev.reserve + 3);
+    state.smg.reserve = Math.min(260, state.smg.reserve + 12);
+    state.dmr.reserve = Math.min(72, state.dmr.reserve + 4);
+    state.lmg.reserve = Math.min(240, state.lmg.reserve + 20);
     if (kills % 2 === 0) {
       state.rl.reserve = Math.min(8, state.rl.reserve + 1);
       A.grenades = Math.min(3, A.grenades + 1);

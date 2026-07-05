@@ -119,6 +119,18 @@ G.audio = (function () {
     } else if (kind === 'rl') {
       playBuf(noiseBuf, { pos, gain: 0.6, dur: 0.5, lp: 3000, rate: 0.6 });
       tone('sawtooth', 90, 30, 0.45, 0.3, pos);
+    } else if (kind === 'rev') { // big single western crack
+      playBuf(noiseBuf, { pos, gain: 0.75, dur: 0.16, lp: 6000, rate: 0.8 });
+      tone('sine', 165, 60, 0.13, 0.55, pos);
+    } else if (kind === 'smg') { // light rapid snap
+      playBuf(noiseBuf, { pos, gain: 0.4, dur: 0.06, lp: 10000, rate: U.rand(1.05, 1.2) });
+      tone('sine', 190, 70, 0.06, 0.35, pos);
+    } else if (kind === 'dmr') { // sharp mid-weight report
+      playBuf(noiseBuf, { pos, gain: 0.7, dur: 0.15, lp: 8200, rate: 0.85 });
+      tone('sine', 145, 40, 0.14, 0.55, pos);
+    } else if (kind === 'lmg') { // heavy thudding chug
+      playBuf(noiseBuf, { pos, gain: 0.6, dur: 0.11, lp: 5600, rate: U.rand(0.78, 0.9) });
+      tone('sine', 120, 35, 0.11, 0.5, pos);
     } else { // bot rifle
       playBuf(noiseBuf, { pos, gain: 0.42, dur: 0.08, lp: 6500, rate: U.rand(0.85, 1.05), maxDist: 90 });
       tone('sine', 130, 42, 0.09, 0.32, pos, 90);

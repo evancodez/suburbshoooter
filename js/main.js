@@ -71,10 +71,10 @@
     vsworld: { name: 'YOU VS WORLD', desc: 'just you against every bot on the map — classic', mp: false, teams: false },
     tdm:     { name: 'TEAM DEATHMATCH', desc: 'green vs red — first team to the kill target wins', mp: true, teams: true },
     ffa:     { name: 'FREE-FOR-ALL', desc: 'no teams, no friends — first to the kill target wins', mp: true, teams: false },
-    gun:     { name: 'GUN GAME', desc: '2 kills per weapon: AR → shotgun → sniper → rocket. finish the ladder to win', mp: true, teams: false },
+    gun:     { name: 'GUN GAME', desc: '2 kills per weapon, 8 weapons: revolver up to rocket. finish the ladder to win', mp: true, teams: false },
     koth:    { name: 'KING OF THE HILL', desc: 'hold the glowing zone to score — the hill moves, so does the fight', mp: true, teams: true },
   };
-  const GUN_LADDER = ['ar', 'sg', 'sr', 'rl'], GUN_PER = 2; // mirrored in enemy.js
+  const GUN_LADDER = ['rev', 'smg', 'ar', 'sg', 'dmr', 'lmg', 'sr', 'rl'], GUN_PER = 2; // mirrored in enemy.js
   const GUN_TARGET = GUN_LADDER.length * GUN_PER;
   const HILL_PERIOD = 40, HILL_YTOL = 3.2;
 
@@ -138,7 +138,9 @@
   }
   document.addEventListener('pointerlockchange', () => {
     pointerLocked = document.pointerLockElement === cv;
-    if (!pointerLocked && game.state === 'playing') {
+    // losing the lock while DEAD used to leave you respawned with a dead mouse
+    // and no pause overlay — the game looked frozen until a blind click
+    if (!pointerLocked && (game.state === 'playing' || game.state === 'dead')) {
       game.paused = true;
       $('pause').style.display = 'flex';
       renderPauseHost();
@@ -443,7 +445,8 @@
     player.deathT = 2.8;
     player.killedBy = killerName;
     if (attacker && attacker.kills !== undefined) attacker.kills++;
-    const tag = attacker && attacker.weapon === 'sg' ? 'SG' : attacker && attacker.weapon === 'rl' ? 'ROCKET' : 'AR';
+    const WTAGS = { sg: 'SG', rl: 'ROCKET', sr: 'SR', rev: 'REVOLVER', smg: 'SMG', dmr: 'DMR', lmg: 'LMG' };
+    const tag = (attacker && WTAGS[attacker.weapon]) || 'AR';
     if (G.net && G.net.active) {
       // host scores + broadcasts the feed; clients report to the host
       G.net.evDied(killerName, attackerTeamOf(attacker), tag);
@@ -779,6 +782,7 @@
     game.paused = false;
     G.arsenal.reset();
     G.arsenal.lockSwitch = game.mode === 'gun'; // the ladder picks your gun
+    if (game.mode === 'gun') G.arsenal.gunTier(GUN_LADDER[0]); // everyone starts at rung one
     G.world.bill = {}; G.world.billTotal = 0; G.world.chunksDestroyed = 0;
     // spawn on my side, facing the middle of the map (ffa: any spawn point)
     const sp = cfg.spawn ||
@@ -1168,7 +1172,7 @@
       ['MOUSE', 'aim · LMB fire'], [L2 ? 'SHIFT' : 'RMB', 'aim down sights'],
       ['SPACE', 'jump / climb ladders'], [L2 ? 'C' : 'SHIFT / C', 'crouch (+sprint = slide)'],
       [L2 ? 'E' : 'G', 'grenade'], ['F', 'knife'],
-      ['R', 'reload'], ['1-4', 'weapons (or wheel)'],
+      ['R', 'reload'], ['1-4 · WHEEL', 'weapons — wheel reaches all 8'],
       ['5', 'airstrike (5 streak)'], ['ESC', 'pause'],
     ];
     $('controlsList').innerHTML = rows.map(([k, txt]) => `<div><span class="key">${k}</span>${txt}</div>`).join('');
@@ -1479,7 +1483,8 @@
       if (game.state === 'dead') {
         player.deathT -= dt;
         $('deathTimer').textContent = Math.max(0, player.deathT).toFixed(1);
-        if (player.deathT <= 0) respawnPlayer();
+        // whatever happens, the death screen must never trap you
+        if (player.deathT <= 0 || !isFinite(player.deathT)) respawnPlayer();
       }
       G.arsenal.update(dt);
       G.botMgr.update(dt);
