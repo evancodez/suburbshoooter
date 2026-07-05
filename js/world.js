@@ -24,6 +24,8 @@ G.world = (function () {
     vend: 1100, cell: 80, shuttle: 25000, dish: 3000, solar: 1200, planter: 300,
     tank: 1500, locker: 150, kiosk: 700, pod: 850, droid: 650, tug: 4200, booth: 60,
     core: 1300, evapod: 2200, monolith: 2001,
+    // crash county
+    plane: 42000, pump: 900, goal: 600, scoreboard: 5500,
     // gold rush gulch
     wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
     keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120,
@@ -514,7 +516,7 @@ G.world = (function () {
   W.mapClock = 0;
 
   // ============ navgrid ============
-  const NAV = { ox: -72, oz: -58, w: 144, d: 116, cell: 1 };
+  const NAV = { ox: -104, oz: -88, w: 208, d: 176, cell: 1 };
   const navBlocked = new Uint8Array(NAV.w * NAV.d);
   const navDirty = [];
   W.nav = NAV;
@@ -779,6 +781,7 @@ G.world = (function () {
     for (let ci = 0; ci < colliders.length; ci++) {
       const c = colliders[ci];
       if (c.gone || c.noShoot) continue;
+      if (c.veh && opts.throughGlass) continue; // vision passes through vehicles
       const t = rayBox(ro, rd, 0, c.minx, c.miny, c.minz, c.maxx, c.maxy, c.maxz);
       if (t >= 0 && t < best) {
         best = t;
@@ -1178,6 +1181,17 @@ G.world = (function () {
       G.fx.decal('pool', prop.x, 0.03, prop.z, null, 2.6, new THREE.Color(0.45, 0.68, 1));
     } else if (prop.kind === 'potty' && G.game && Math.random() < 0.6) {
       G.game.chat('HOA_Enforcer', U.pick(['NOT the porta-potty', 'you monster', 'someone was in there!!']));
+    } else if (prop.kind === 'pump') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 5.5, 125, { attacker, tag: 'GAS PUMP' });
+    } else if (prop.kind === 'scoreboard' && G.game) {
+      G.fx.shake(0.6, 0.5);
+      G.game.chat('CRATER BOWL PA', 'the score is now: nothing to nothing, forever');
+    } else if (prop.kind === 'plane') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 7, 150, { attacker, tag: 'CROP DUSTER' });
+      G.fx.shake(1.0, 0.8);
+      if (G.game) G.game.chat('COUNTY FAA', 'that aircraft was NOT cleared for demolition');
     } else if (prop.kind === 'tnt') {
       // the whole point of a mining town
       tmpV.set(prop.x, prop.y, prop.z);
@@ -1288,6 +1302,15 @@ G.world = (function () {
       const d = U.dist2d(pos.x, pos.z, prop.x, prop.z);
       if (d < radius + 0.5) W.damageProp(prop, maxDmg * U.clamp(1 - d / radius, 0.2, 1), opts.attacker);
     }
+    // vehicles caught in the blast
+    if (G.veh) {
+      for (const v of G.veh.list) {
+        if (v.dead) continue;
+        const dv = U.dist2d(pos.x, pos.z, v.pos.x, v.pos.z);
+        if (dv < radius + 1.5 && Math.abs(pos.y - v.pos.y) < radius + 2)
+          G.veh.damage(v, maxDmg * 0.8 * U.clamp(1 - dv / radius, 0.25, 1), opts.attacker);
+      }
+    }
     // attacker team for friendly-fire gating (explosions spare teammates, not yourself)
     const att = opts.attacker;
     const attTeam = att === 'player' ? (G.player ? G.player.team : -9)
@@ -1351,6 +1374,7 @@ G.world = (function () {
       W.damageProp(hit.collider.prop, dmg, attacker);
     } else if (hit.kind === 'aabb') {
       G.fx.impact(hit.collider.metal ? 'metal' : 'chunk', hit.point, hit.normal);
+      if (hit.collider.veh && G.veh) G.veh.damage(hit.collider.veh, dmg, attacker);
     } else if (hit.kind === 'ground') {
       G.fx.impact('ground', hit.point, hit.normal);
     }
@@ -1823,9 +1847,12 @@ G.world = (function () {
     { id: 'station', name: 'MERIDIAN STATION' },
     { id: 'city', name: 'DOWNTOWN' },
     { id: 'gulch', name: 'GOLD RUSH GULCH' },
+    { id: 'county', name: 'CRASH COUNTY' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
+  W.mmBox = { w: 144, h: 116, ox: 72, oz: 58 }; // minimap world-space window
+  W.vehicleSpawns = []; // {kind:'jeep'|'heli', x, z, yaw} — consumed by G.veh
   W.zeroG = false;            // jetpack physics for players + bots
   W.hasGround = true;         // false in space: no invisible floor at y=0
   W.spaceY = { min: -14, max: 30 }; // vertical play limits in zero-g
@@ -1857,12 +1884,15 @@ G.world = (function () {
     W.mapClock = 0;
     W.mapUpdate = null;
     W.minimapPaint = null;
+    W.mmBox = { w: 144, h: 116, ox: 72, oz: 58 };
+    W.vehicleSpawns = [];
     W.zeroG = false;
     W.hasGround = true;
     if (W.mapId === 'island') buildIslandMap();
     else if (W.mapId === 'station') buildStationMap();
     else if (W.mapId === 'city') buildCityMap();
     else if (W.mapId === 'gulch') buildGulchMap();
+    else if (W.mapId === 'county') buildCountyMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -1999,6 +2029,7 @@ G.world = (function () {
       { x: -58, z: -28 }, { x: 58, z: 28 }, { x: 26, z: -26 }, { x: -26, z: 22 },
     ];
     for (const car of cars) W.campSpots.push({ x: car.group.position.x + 3, z: car.group.position.z + 2, yaw: 0 });
+    W.vehicleSpawns = [{ kind: 'jeep', x: -58, z: 8, yaw: Math.PI / 2 }, { kind: 'jeep', x: 58, z: -8, yaw: -Math.PI / 2 }];
     W.hillSpots = [
       { x: 0, z: 0, y: 0, r: 6 },        // the main intersection
       { x: -32, z: 24, y: 0, r: 5.5 },   // west backyards
@@ -3466,6 +3497,335 @@ G.world = (function () {
     addSky(0xffab6b, { cloudTint: 0xffd9b0, sunTint: 0xffb84a, sunPos: [150, 34, -80], sunScale: 44, clouds: 5 });
   }
 
+  // ============ MAP 7: CRASH COUNTY — the big one: five POIs, roads, vehicles ============
+  function buildCountyMap() {
+    W.bounds = { x: 100, z: 84 };
+    W.teamSpawns = [{ x: -88, z: 0 }, { x: 88, z: 0 }];
+    W.mmBox = { w: 208, h: 176, ox: 104, oz: 88 };
+
+    // countryside base + road network (the vehicle arteries)
+    plane(460, 420, T.grass(), 0, 0, 0).material.map.repeat.set(64, 58);
+    plane(196, 8, T.road(), 0, 0.02, 0).material.map.repeat.set(22, 1);          // EW spine
+    const ns = plane(160, 8, T.road(), 0, 0.022, 0); ns.rotation.z = Math.PI / 2; ns.material.map.repeat.set(18, 1);
+    plane(150, 7, T.road(), 0, 0.021, -48).material.map.repeat.set(17, 1);       // north ring
+    plane(150, 7, T.road(), 0, 0.021, 48).material.map.repeat.set(17, 1);        // south ring
+    const rw = plane(7, 100, T.road(), -70, 0.021, 0); rw.material.map.repeat.set(1, 12);
+    const re = plane(7, 100, T.road(), 70, 0.021, 0); re.material.map.repeat.set(1, 12);
+
+    // invisible county line
+    addCollider(-108, 0, -92, -100.4, 26, 92, { noShoot: true });
+    addCollider(100.4, 0, -92, 108, 26, 92, { noShoot: true });
+    addCollider(-108, 0, -92, 108, 26, -84.4, { noShoot: true });
+    addCollider(-108, 0, 84.4, 108, 26, 92, { noShoot: true });
+
+    const HULL = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ox: o.ox, oy: o.oy || 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'hull', tint: tint || 0xb8bfc8, hp: hp || 55, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    const CTY = (o, dir, cols, rows, fn, tint, hp) => {
+      const wl = WallGrid({ ox: o.ox, oy: o.oy || 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.28, kind: 'city', tint: tint || 0xd8d2c4, hp: hp || 55, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    const winBand = (door) => (c, r) => {
+      if (door) { const d = door(c, r); if (d !== undefined) return d; }
+      return (r === 3 || r === 4) && c % 3 === 1 ? 3 : 0;
+    };
+
+    // ---- POI 1: THE AIRFIELD (NW) ----
+    plane(92, 14, T.driveway(), -52, 0.024, -66).material.map.repeat.set(26, 3);  // runway
+    plane(10, 22, T.driveway(), -50, 0.023, -50).material.map.repeat.set(3, 6);   // taxiway
+    // the hangar: huge hull shell, giant south door, catwalk inside, walkable roof
+    HULL({ ox: -73, oz: -50 }, 'x', 30, 10, winBand());
+    HULL({ ox: -73, oz: -30 }, 'x', 30, 10, (c, r) => (c >= 6 && c <= 23 && r <= 7) ? 1 : 0);
+    HULL({ ox: -73, oz: -50 }, 'z', 20, 10, winBand());
+    HULL({ ox: -43, oz: -50 }, 'z', 20, 10, winBand());
+    buildPlatform(-58, -47.6, 26, 3.6, 4.2, 0.25); // back catwalk (playability skeleton)
+    buildStairs(-70.2, -44.4, 0, -1, 2.6, 10, 0.42, 0.5, 0);
+    buildStairs(-45.8, -44.4, 0, -1, 2.6, 10, 0.42, 0.5, 0);
+    const hangRail = WallGrid({ ox: -70, oy: 4.2, oz: -45.8, dir: 'x', cols: 24, rows: 1, cw: 1, ch: 0.75, th: 0.12, kind: 'fence', tint: 0x8a9298, hp: 14, house: null });
+    wallFill(hangRail, () => 0);
+    buildPlatform(-58, -40, 29.4, 19.4, 7.2, 0.3); // roof deck
+    HULL({ ox: -72.7, oy: 7.2, oz: -49.7 }, 'x', 29, 1, null, 0x9aa2ac, 22);
+    HULL({ ox: -72.7, oy: 7.2, oz: -30.55 }, 'x', 29, 1, null, 0x9aa2ac, 22);
+    addLadder(-73.55, -40, 0, 3.6, 'w');
+    addLadder(-73.55, -40, 3.6, 7.2, 'w');
+    addProp('plane', -64, 0, -38, 6.5, 2.2, 2.0, T.plain, 0xd8d43e, 120, { metal: true });   // crop duster body
+    addProp('plane', -64, 1.1, -38, 1.5, 0.22, 7.2, T.plain, 0xd8d43e, 60, { metal: true }); // wing
+    addProp('plane', -34, 0, -58, 6.5, 2.2, 2.0, T.plain, 0xc23b4e, 120, { metal: true, rotY: 0.4 });
+    addProp('plane', -34, 1.1, -58, 1.5, 0.22, 7.2, T.plain, 0xc23b4e, 60, { metal: true, rotY: 0.4 });
+    addProp('cell', -52, 0, -33, 0.8, 1.1, 0.8, T.hazard, 0xffffff, 16, { metal: true });
+    addProp('cell', -50.4, 0, -33.4, 0.8, 1.1, 0.8, T.hazard, 0xffffff, 16, { metal: true });
+    addProp('crate', -68, 0, -34, 1.2, 1.2, 1.2, T.plain, 0x8a6b42, 22, {});
+    addProp('desk', -47, 0, -47.5, 2.6, 1.05, 1.0, T.floorWood, 0x6a5a48, 45, {});
+    addProp('tank', -76, 0, -56, 2.2, 2.4, 2.2, T.container, 0xc9c9c9, 120, { metal: true });
+    // control tower: glass cab, chained ladders up the core, dish on top
+    CTY({ ox: -34, oz: -48 }, 'x', 4, 16, (c, r) => r >= 13 ? 3 : 0, 0xcfd4da);
+    CTY({ ox: -34, oz: -44 }, 'x', 4, 16, (c, r) => r >= 13 ? 3 : (c >= 1 && c <= 2 && r <= 3 ? 1 : 0), 0xcfd4da);
+    CTY({ ox: -34, oz: -48 }, 'z', 4, 16, (c, r) => r >= 13 ? 3 : 0, 0xcfd4da);
+    CTY({ ox: -30, oz: -48 }, 'z', 4, 16, (c, r) => r >= 13 ? 3 : 0, 0xcfd4da);
+    addLadder(-32, -46, 0, 4.7, 's');
+    addLadder(-32, -46, 4.7, 9.36, 's');
+    buildPlatform(-32, -45.1, 3.2, 1.5, 9.36, 0.18);
+    buildPlatform(-32, -47.3, 3.2, 1.1, 9.36, 0.18);
+    addProp('dish', -32, 11.6, -46, 0.9, 0.9, 0.9, T.console, 0x8a94a4, 45, { metal: true, noWalk: true });
+    W.campSpots.push({ x: -32, z: -46, yaw: Math.PI }, { x: -58, z: -36, yaw: 0 });
+
+    // ---- POI 2: SUNUP FARM (NE) ----
+    WD_COUNTY({ ox: 50, oz: -58 }, 'x', 16, 9, (c, r) => (c >= 6 && c <= 9 && r <= 4) ? 1 : 0);
+    WD_COUNTY({ ox: 50, oz: -46 }, 'x', 16, 9, (c, r) => (c >= 6 && c <= 9 && r <= 4) ? 1 : 0);
+    WD_COUNTY({ ox: 50, oz: -58 }, 'z', 12, 9);
+    WD_COUNTY({ ox: 66, oz: -58 }, 'z', 12, 9);
+    buildPlatform(58, -55.4, 13, 4.6, 3.6, 0.25); // hayloft
+    addLadder(58, -53, 0, 3.6, 's');
+    addProp('hay', 55, 3.6, -56, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('hay', 61, 3.6, -56.4, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('hay', 53, 0, -49, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('wagon', 62, 0, -50, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
+    buildPlatform(58, -52, 15.4, 11.4, 6.48, 0.25); // barn roof deck
+    addLadder(49.45, -52, 0, 3.3, 'w');
+    addLadder(49.45, -52, 3.3, 6.48, 'w');
+    // farmhouse: two floors + roof
+    const FH = (o, dir, cols, rows, fn) => {
+      const wl = WallGrid({ ox: o.ox, oy: 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.24, kind: 'siding', tint: 0xf2e8d8, hp: 50, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    FH({ ox: 71, oz: -42 }, 'x', 10, 10, winBand());
+    FH({ ox: 71, oz: -34 }, 'x', 10, 10, winBand());
+    FH({ ox: 71, oz: -42 }, 'z', 8, 10, winBand((c, r) => { if (c >= 3 && c <= 4 && r <= 3) return 1; }));
+    FH({ ox: 81, oz: -42 }, 'z', 8, 10, winBand());
+    buildPlatform(76.6, -38, 8.6, 7.4, 3.6, 0.28);
+    buildPlatform(72.4, -40.9, 2.6, 1.6, 3.6, 0.28);
+    buildStairs(72.4, -39.9, 0, 1, 2.4, 10, 0.36, 0.5, 0);
+    buildPlatform(76, -38, 9.4, 7.4, 7.2, 0.28);
+    addLadder(81.55, -38, 0, 3.6, 'e');
+    addLadder(81.55, -38, 3.6, 7.2, 'e');
+    addProp('bed', 74, 3.6, -36, 2.1, 0.7, 1.4, T.bed, 0xffffff, 35, {});
+    addProp('couch', 78, 0, -40, 2.0, 0.85, 0.9, T.couch, 0xffffff, 45, {});
+    for (const [sx, sz] of [[44, -66], [48.5, -69], [53, -66.5]]) {
+      addProp('silo', sx, 0, sz, 2.7, 7.5, 2.7, T.container, 0xd8d8d2, 160, { metal: true });
+    }
+    buildFenceRun(50, -40, 64, -40, false, 'fence', 0x8a6b42, 14);
+    buildFenceRun(50, -30, 64, -30, false, 'fence', 0x8a6b42, 14);
+    buildFenceRun(50, -40, 50, -30, false, 'fence', 0x8a6b42, 14);
+    addProp('trough', 56, 0, -35, 1.9, 0.6, 0.8, T.plain, 0x7a5f38, 22, {});
+    W.campSpots.push({ x: 58, z: -52, yaw: Math.PI }, { x: 76, z: -38, yaw: Math.PI / 2 });
+
+    // ---- POI 3: MERIDIAN SPRINGS (town center) ----
+    const SHOP = (x0, z0, z1, doorFace) => {
+      const d = z1 - z0;
+      CTY({ ox: x0, oz: z0 }, 'x', 14, 6, winBand());
+      CTY({ ox: x0, oz: z1 }, 'x', 14, 6, winBand());
+      CTY({ ox: x0, oz: z0 }, 'z', d, 6, doorFace === 'w' ? winBand((c, r) => { if (c >= d / 2 - 1 && c <= d / 2 && r <= 3) return 1; }) : winBand());
+      CTY({ ox: x0 + 14, oz: z0 }, 'z', d, 6, doorFace === 'e' ? winBand((c, r) => { if (c >= d / 2 - 1 && c <= d / 2 && r <= 3) return 1; }) : winBand());
+      buildPlatform(x0 + 7, (z0 + z1) / 2, 13.4, d - 0.6, 4.32, 0.25);
+      CTY({ ox: x0 + 0.3, oy: 4.32, oz: z0 + 0.3 }, 'x', 13, 1, null, 0xb8b2a4, 20);
+      CTY({ ox: x0 + 0.3, oy: 4.32, oz: z1 - 0.3 }, 'x', 13, 1, null, 0xb8b2a4, 20);
+      addProp('shelf', x0 + 2, 0, z0 + 3, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+      addProp('desk', x0 + 10, 0, z1 - 3, 2.4, 1.05, 0.9, T.floorWood, 0x6a5a48, 45, {});
+    };
+    SHOP(-24, -22, -6, 'e');  // west shops, doors to the street
+    SHOP(-24, 2, 18, 'e');
+    addLadder(-24.55, -14, 0, 4.32, 'w');
+    addLadder(-24.55, 10, 0, 4.32, 'w');
+    // bank (stone) with the vault
+    const BNK = (o, dir, cols, rows, fn) => {
+      const wl = WallGrid({ ox: o.ox, oy: 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: 0xc9c2b2, hp: 75, house: null });
+      wallFill(wl, fn || (() => 0));
+    };
+    BNK({ ox: 10, oz: -20 }, 'x', 14, 6, winBand());
+    BNK({ ox: 10, oz: -8 }, 'x', 14, 6, winBand());
+    BNK({ ox: 10, oz: -20 }, 'z', 12, 6, winBand((c, r) => { if (c >= 5 && c <= 6 && r <= 3) return 1; }));
+    BNK({ ox: 24, oz: -20 }, 'z', 12, 6, winBand());
+    const vaultC = WallGrid({ ox: 17, oy: 0, oz: -14.5, dir: 'x', cols: 6, rows: 6, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: 0x8f8a80, hp: 130, house: null });
+    wallFill(vaultC, (c, r) => (c === 1 && r <= 3) ? 1 : 0);
+    const vaultC2 = WallGrid({ ox: 17, oy: 0, oz: -14.5, dir: 'z', cols: 5, rows: 6, cw: 1, ch: 0.72, th: 0.3, kind: 'block', tint: 0x8f8a80, hp: 130, house: null });
+    wallFill(vaultC2, () => 0);
+    addProp('chest', 21, 0, -11.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('chest', 19, 0, -10.6, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    buildPlatform(17, -14, 13.4, 11.4, 4.32, 0.25);
+    addLadder(24.55, -14, 0, 4.32, 'e');
+    // the diner
+    SHOP(10, 0, 12, 'w');
+    addProp('couch', 14, 0, 3, 2.0, 0.85, 0.9, T.couch, 0xc23b4e, 45, {});
+    addProp('couch', 14, 0, 8, 2.0, 0.85, 0.9, T.couch, 0xc23b4e, 45, {});
+    addProp('vend', 22.4, 0, 10, 1.2, 2.0, 0.9, T.container, 0xc23b4e, 60, { metal: true });
+    // clock tower — tallest thing in the county
+    CTY({ ox: -2.5, oz: 28 }, 'x', 5, 20, (c, r) => (r >= 15 && r <= 18 && c >= 1 && c <= 3) ? 1 : 0, 0xd0c8b8);
+    CTY({ ox: -2.5, oz: 33 }, 'x', 5, 20, (c, r) => (r >= 15 && r <= 18 && c >= 1 && c <= 3) ? 1 : (c >= 1 && c <= 3 && r <= 3 ? 1 : 0), 0xd0c8b8);
+    CTY({ ox: -2.5, oz: 28 }, 'z', 5, 20, (c, r) => (r >= 15 && r <= 18 && c >= 1 && c <= 3) ? 1 : 0, 0xd0c8b8);
+    CTY({ ox: 2.5, oz: 28 }, 'z', 5, 20, (c, r) => (r >= 15 && r <= 18 && c >= 1 && c <= 3) ? 1 : 0, 0xd0c8b8);
+    addLadder(0, 29.2, 0, 6.1, 's');
+    addLadder(0, 29.2, 6.1, 12.24, 's');
+    buildPlatform(0, 31.4, 4.2, 2.6, 12.24, 0.2);
+    buildPlatform(0, 28.7, 4.2, 0.9, 12.24, 0.2);
+    for (const [cx2, cz2, ry] of [[0, 27.7, 0], [0, 33.3, 0], [-2.8, 30.5, Math.PI / 2], [2.8, 30.5, Math.PI / 2]]) {
+      const face = new THREE.Mesh(new THREE.CircleGeometry(1.5, 18), new THREE.MeshBasicMaterial({ color: 0xf5efdf }));
+      face.position.set(cx2, 10.4, cz2);
+      face.rotation.y = ry === 0 ? 0 : Math.PI / 2;
+      grp.add(face);
+    }
+    // fountain plaza + street life
+    plane(20, 14, T.driveway(), 0, 0.026, -34).material.map.repeat.set(6, 4);
+    addProp('fountain', 0, 0, -34, 2.6, 1.1, 2.6, T.cinder, 0xcfd4da, 90, {});
+    addProp('bench', -5, 0, -30, 1.7, 0.55, 0.6, T.plain, 0x6a7484, 25, {});
+    addProp('bench', 5, 0, -30, 1.7, 0.55, 0.6, T.plain, 0x6a7484, 25, {});
+    addProp('hydrant', -9, 0, -24, 0.5, 0.95, 0.5, T.hydrant, 0xffffff, 30, { metal: true });
+    buildCar(-6, -14, false, 0x9aa0a6);
+    buildCar(6, 6, false, 0x3b6bd6);
+    buildCar(-6, 14, false, 0xc84040);
+    buildCar(30, 4, true, 0xe8e8e8);
+    W.campSpots.push({ x: 0, z: 30.5, yaw: Math.PI }, { x: -17, z: -14, yaw: -Math.PI / 2 }, { x: 17, z: -14, yaw: Math.PI / 2 });
+
+    // gas station on the spine road (do NOT shoot the pumps. do it.)
+    plane(16, 12, T.driveway(), 32, 0.024, -8).material.map.repeat.set(5, 4);
+    for (const [px2, pz2] of [[27, -10], [27, -6], [37, -10], [37, -6]]) buildPost(px2, pz2, 4.2, 0.3, 0);
+    buildPlatform(32, -8, 13, 7, 4.4, 0.22);
+    addLadder(38.55, -8, 0, 4.4, 'e');
+    addProp('pump', 30, 0, -9.5, 0.7, 1.4, 0.9, T.hazard, 0xc23b2e, 20, { metal: true });
+    addProp('pump', 30, 0, -6.5, 0.7, 1.4, 0.9, T.hazard, 0xc23b2e, 20, { metal: true });
+    addProp('pump', 34, 0, -9.5, 0.7, 1.4, 0.9, T.hazard, 0xc23b2e, 20, { metal: true });
+    addProp('pump', 34, 0, -6.5, 0.7, 1.4, 0.9, T.hazard, 0xc23b2e, 20, { metal: true });
+    CTY({ ox: 26, oz: -2 }, 'x', 12, 5, winBand((c, r) => { if (c >= 5 && c <= 6 && r <= 3) return 1; }), 0xe8e2d4);
+    CTY({ ox: 26, oz: 4 }, 'x', 12, 5, null, 0xe8e2d4);
+    CTY({ ox: 26, oz: -2 }, 'z', 6, 5, null, 0xe8e2d4);
+    CTY({ ox: 38, oz: -2 }, 'z', 6, 5, null, 0xe8e2d4);
+    addProp('vend', 36.4, 0, 2.4, 1.2, 2.0, 0.9, T.container, 0x3f8f5f, 60, { metal: true });
+    addProp('shelf', 28, 0, 2.6, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+
+    // ---- POI 4: THE CRATER BOWL (SW stadium) ----
+    const SW0 = { x0: -78, x1: -34, z0: 31, z1: 65 };
+    CTY({ ox: SW0.x0, oz: SW0.z0 }, 'x', 44, 5, (c, r) => (c >= 20 && c <= 23 && r <= 3) ? 1 : 0, 0xb8c2cc);
+    CTY({ ox: SW0.x0, oz: SW0.z1 }, 'x', 44, 5, (c, r) => (c >= 20 && c <= 23 && r <= 3) ? 1 : 0, 0xb8c2cc);
+    CTY({ ox: SW0.x0, oz: SW0.z0 }, 'z', 34, 5, (c, r) => (c >= 15 && c <= 18 && r <= 3) ? 1 : 0, 0xb8c2cc);
+    CTY({ ox: SW0.x1, oz: SW0.z0 }, 'z', 34, 5, (c, r) => (c >= 15 && c <= 18 && r <= 3) ? 1 : 0, 0xb8c2cc);
+    // stands: two indestructible walkway rings (the playability skeleton)
+    for (const [inset, y] of [[2.2, 2.1], [6.2, 4.2]]) {
+      const wdt = 4;
+      buildPlatform((SW0.x0 + SW0.x1) / 2, SW0.z0 + inset + wdt / 2 - 1, SW0.x1 - SW0.x0 - inset * 2, wdt, y, 0.3);
+      buildPlatform((SW0.x0 + SW0.x1) / 2, SW0.z1 - inset - wdt / 2 + 1, SW0.x1 - SW0.x0 - inset * 2, wdt, y, 0.3);
+      buildPlatform(SW0.x0 + inset + wdt / 2 - 1, (SW0.z0 + SW0.z1) / 2, wdt, SW0.z1 - SW0.z0 - inset * 2, y, 0.3);
+      buildPlatform(SW0.x1 - inset - wdt / 2 + 1, (SW0.z0 + SW0.z1) / 2, wdt, SW0.z1 - SW0.z0 - inset * 2, y, 0.3);
+    }
+    buildStairs(-66, 42.6, 0, -1, 2.6, 10, 0.42, 0.5, 0);   // field → stands
+    buildStairs(-46, 53.4, 0, 1, 2.6, 10, 0.42, 0.5, 0);
+    buildStairs(-73.4, 48, 1, 0, 2.6, 10, 0.42, 0.5, 0);
+    buildStairs(-38.6, 48, -1, 0, 2.6, 10, 0.42, 0.5, 0);
+    addProp('scoreboard', -56, 4.4, 33.6, 6.5, 3.2, 0.5, T.billboard, 0xffffff, 140, { metal: true, noWalk: true });
+    buildPost(-59.4, 33.6, 4.4, 0.4, 0);
+    buildPost(-52.6, 33.6, 4.4, 0.4, 0);
+    for (const gx of [-72, -40]) {
+      buildPost(gx, 46.4, 4.6, 0.22, 0);
+      buildPost(gx, 49.6, 4.6, 0.22, 0);
+    }
+    W.campSpots.push({ x: -56, z: 36.4, yaw: Math.PI }, { x: -56, z: 60, yaw: 0 });
+
+    // ---- POI 5: BLOCKWORKS FACTORY (SE) ----
+    plane(38, 34, T.driveway(), 56, 0.023, 46).material.map.repeat.set(11, 10);
+    HULL({ ox: 40, oz: 30 }, 'x', 32, 11, winBand(), 0xaab4b8);
+    HULL({ ox: 40, oz: 58 }, 'x', 32, 11, winBand((c, r) => { if (c >= 14 && c <= 18 && r <= 5) return 1; }), 0xaab4b8);
+    HULL({ ox: 40, oz: 30 }, 'z', 28, 11, winBand((c, r) => { if (c >= 12 && c <= 15 && r <= 5) return 1; }), 0xaab4b8);
+    HULL({ ox: 72, oz: 30 }, 'z', 28, 11, winBand((c, r) => { if (c >= 12 && c <= 15 && r <= 5) return 1; }), 0xaab4b8);
+    // crossing catwalks (indestructible skeleton) + stairs at the ends
+    buildPlatform(56, 44, 28, 3, 4.3, 0.25);
+    buildPlatform(56, 44, 3, 24, 4.3, 0.25);
+    buildStairs(43.6, 44, 1, 0, 2.6, 10, 0.43, 0.5, 0);
+    buildStairs(68.4, 44, -1, 0, 2.6, 10, 0.43, 0.5, 0);
+    const fRail1 = WallGrid({ ox: 42.5, oy: 4.3, oz: 42.4, dir: 'x', cols: 27, rows: 1, cw: 1, ch: 0.75, th: 0.1, kind: 'fence', tint: 0x8a9298, hp: 14, house: null });
+    wallFill(fRail1, () => 0);
+    const fRail2 = WallGrid({ ox: 42.5, oy: 4.3, oz: 45.6, dir: 'x', cols: 27, rows: 1, cw: 1, ch: 0.75, th: 0.1, kind: 'fence', tint: 0x8a9298, hp: 14, house: null });
+    wallFill(fRail2, () => 0);
+    // machinery + walkable roof + chimneys
+    addProp('mixer', 48, 0, 36, 2.4, 2.2, 2.0, T.container, 0x8a6a4a, 120, { metal: true });
+    addProp('mixer', 64, 0, 52, 2.4, 2.2, 2.0, T.container, 0x8a6a4a, 120, { metal: true });
+    addProp('generator', 50, 0, 52, 1.8, 1.4, 1.2, T.hazard, 0xffffff, 60, { metal: true });
+    addProp('cell', 62, 0, 36, 0.8, 1.1, 0.8, T.hazard, 0xffffff, 16, { metal: true });
+    addProp('cell', 63.6, 0, 36.4, 0.8, 1.1, 0.8, T.hazard, 0xffffff, 16, { metal: true });
+    addProp('shelf', 42.6, 0, 50, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    buildPlatform(56, 44, 31.4, 27.4, 7.92, 0.3);
+    HULL({ ox: 40.3, oy: 7.92, oz: 30.3 }, 'x', 31, 1, null, 0x8a9298, 22);
+    HULL({ ox: 40.3, oy: 7.92, oz: 57.7 }, 'x', 31, 1, null, 0x8a9298, 22);
+    addLadder(39.45, 44, 0, 4, 'w');
+    addLadder(39.45, 44, 4, 7.92, 'w');
+    addLadder(72.55, 52, 0, 4, 'e');
+    addLadder(72.55, 52, 4, 7.92, 'e');
+    addProp('acduct', 50, 7.92, 38, 1.6, 1.1, 1.3, T.plain, 0xaab2ba, 40, { metal: true });
+    addProp('silo', 46, 0, 27, 3.0, 10, 3.0, T.cinder, 0x9a948a, 200, { metal: true });
+    addProp('silo', 53, 0, 27, 3.0, 10, 3.0, T.cinder, 0x9a948a, 200, { metal: true });
+    // container yard (climbable) + the crane
+    for (const [cx3, cz3, tint, top] of [[46, 66, 0xc23b4e, 0], [52.5, 66, 0x3f8f5f, 0], [59, 66, 0xd8b23e, 0], [46, 72, 0x4a6a8a, 0], [52.5, 72, 0x8a5fd0, 0], [49.2, 66, 0x8a4030, 1], [55.8, 69, 0x2e6e8e, 1]]) {
+      addProp('crate', cx3, top ? 2.6 : 0, cz3, 5.8, 2.6, 2.4, T.container, tint, 90, { metal: true, step: true });
+    }
+    addProp('crate', 42.6, 0, 66, 1.3, 1.3, 1.3, T.plain, 0x8a6b42, 22, { step: true });
+    buildPost(78, 36, 16, 0.8, 0);
+    buildPlatform(71, 36, 14.5, 2.4, 15.6, 0.3);
+    addLadder(78, 37.05, 0, 4, 's');
+    addLadder(78, 37.05, 4, 8, 's');
+    addLadder(78, 37.05, 8, 12, 's');
+    addLadder(78, 37.05, 12, 15.6, 's');
+    W.campSpots.push({ x: 56, z: 44, yaw: 0 }, { x: 66, z: 36, yaw: Math.PI / 2 }, { x: 71, z: 36, yaw: Math.PI / 2 });
+
+    // ---- connective tissue ----
+    for (const [wtx, wtz] of [[27, -30], [29.4, -30], [27, -27.6], [29.4, -27.6]]) buildPost(wtx, wtz, 3.2, 0.24, 0);
+    buildPlatform(28.2, -28.8, 3.4, 3.4, 3.4, 0.18);
+    addLadder(26.4, -28.8, 0, 3.4, 'w');
+    addProp('towertank', 28.2, 3.4, -28.8, 2.4, 2.3, 2.4, T.container, 0x7a8a9a, 200, { metal: true });
+    addProp('billboard', -30, 2.8, 46, 5.5, 2.8, 0.4, T.billboard, 0xffffff, 100, { metal: true, noWalk: true });
+    buildPost(-32.4, 46, 2.8, 0.3, 0);
+    buildPost(-27.6, 46, 2.8, 0.3, 0);
+    for (const [tx2, tz2] of [[-14, -40], [16, -46], [-40, 8], [40, 12], [-16, 56], [14, 44], [80, 8], [-86, 30], [86, -20], [-46, -14], [70, -14], [-70, 22]]) buildTree(tx2, tz2);
+    addProp('barrel', -12, 0, -8, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
+    addProp('dumpster', -26, 0, 20, 2.0, 1.3, 1.1, T.dumpster, 0xffffff, 60, { metal: true });
+    addProp('potty', -26, 0, 24, 1.0, 2.0, 1.0, T.portapotty, 0xffffff, 30, {});
+
+    // ---- vehicles: the county fleet ----
+    W.vehicleSpawns = [
+      { kind: 'jeep', x: -44, z: -56, yaw: Math.PI / 2 },   // airfield apron
+      { kind: 'jeep', x: 6, z: -28, yaw: 0 },               // town plaza
+      { kind: 'jeep', x: 68, z: -46, yaw: -Math.PI / 2 },   // farm
+      { kind: 'jeep', x: -56, z: 27, yaw: Math.PI },        // stadium lot
+      { kind: 'jeep', x: 46, z: 61, yaw: Math.PI },         // container yard
+      { kind: 'jeep', x: 36, z: -12, yaw: Math.PI / 2 },    // gas station
+      { kind: 'heli', x: -78, z: -40, yaw: 0 },             // airfield helipad
+      { kind: 'heli', x: -56, z: 48, yaw: Math.PI / 2 },    // stadium field
+    ];
+    plane(9, 9, T.driveway(), -78, 0.024, -40).material.map.repeat.set(3, 3);
+
+    W.spawnPoints = [
+      { x: -88, z: 0 }, { x: 88, z: 0 }, { x: 0, z: -78 }, { x: 0, z: 78 },
+      { x: -80, z: -60 }, { x: 80, z: -62 }, { x: -80, z: 60 }, { x: 80, z: 66 },
+      { x: -30, z: -20 }, { x: 30, z: 20 }, { x: -50, z: 10 }, { x: 50, z: -12 },
+      { x: 0, z: 50 }, { x: -20, z: -60 }, { x: 24, z: -40 }, { x: -60, z: -16 },
+      { x: 60, z: 16 }, { x: -36, z: 68 }, { x: 34, z: 34 }, { x: 90, z: -40 },
+    ];
+    W.hillSpots = [
+      { x: 0, z: -34, y: 0, r: 6 },      // fountain plaza
+      { x: -58, z: -40, y: 0, r: 6 },    // inside the hangar
+      { x: -56, z: 48, y: 0, r: 6 },     // stadium field
+      { x: 56, z: 44, y: 0, r: 6 },      // factory floor
+      { x: 58, z: -52, y: 0, r: 5.5 },   // the barn
+    ];
+    W.minimapPaint = function (x, s, ox, oz) {
+      x.fillStyle = '#3e8f2e'; x.fillRect(0, 0, W.mmBox.w * s, W.mmBox.h * s);
+      x.fillStyle = '#77797d';
+      x.fillRect(0, (oz - 4) * s, W.mmBox.w * s, 8 * s);                      // EW spine
+      x.fillRect((ox - 4) * s, (oz - 80) * s, 8 * s, 160 * s);                // NS spine
+      x.fillRect((ox - 75) * s, (oz - 51.5) * s, 150 * s, 7 * s);             // rings
+      x.fillRect((ox - 75) * s, (oz + 44.5) * s, 150 * s, 7 * s);
+      x.fillRect((ox - 73.5) * s, (oz - 50) * s, 7 * s, 100 * s);
+      x.fillRect((ox + 66.5) * s, (oz - 50) * s, 7 * s, 100 * s);
+      x.fillStyle = '#8a8d92'; x.fillRect((ox - 98) * s, (oz - 73) * s, 92 * s, 14 * s); // runway
+      x.fillStyle = '#b8c2cc'; x.fillRect((ox - 78) * s, (oz + 31) * s, 44 * s, 34 * s); // stadium
+      x.fillStyle = '#9aa4a8'; x.fillRect((ox + 40) * s, (oz + 30) * s, 32 * s, 28 * s); // factory
+      x.fillStyle = '#c9b98a'; x.fillRect((ox + 44) * s, (oz - 70) * s, 40 * s, 40 * s); // farm dirt
+    };
+    addSky(0x7cc0ee, { clouds: 9, sunPos: [160, 110, -120], sunScale: 30 });
+  }
+  // barn walls (red wood)
+  function WD_COUNTY(o, dir, cols, rows, fn) {
+    const wl = WallGrid({ ox: o.ox, oy: o.oy || 0, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.24, kind: 'wood', tint: 0xa83a2e, hp: 40, house: null });
+    wallFill(wl, fn || (() => 0));
+  }
+
   function buildPalm(x, z, lean) {
     const dx = Math.cos(lean) * 0.3, dz = Math.sin(lean) * 0.3;
     let cx = x, cz = z, py = 0;
@@ -3513,6 +3873,12 @@ G.world = (function () {
     W.hillSpots.length = 0;
     W.bill = {}; W.billTotal = 0; W.chunksDestroyed = 0;
     W.build(scene);
+  };
+
+  // vehicles: a live AABB the physics + raycasts track as it moves
+  W.registerMovingBox = function (box) {
+    colliders.push(box);
+    return box;
   };
 
   W.flushBatches = function () { for (const k in batches) batches[k].flush(); };

@@ -73,6 +73,7 @@
     ffa:     { name: 'FREE-FOR-ALL', desc: 'no teams, no friends — first to the kill target wins', mp: true, teams: false },
     gun:     { name: 'GUN GAME', desc: '2 kills per weapon, 8 weapons: revolver up to rocket. finish the ladder to win', mp: true, teams: false },
     koth:    { name: 'KING OF THE HILL', desc: 'hold the glowing zone to score — the hill moves, so does the fight', mp: true, teams: true },
+    royale:  { name: 'DEMOLITION ROYALE', desc: 'no respawns — outrun the closing wall, steal a jeep or a helicopter, wreck everything, be the last block standing', mp: true, teams: false },
   };
   const GUN_LADDER = ['rev', 'smg', 'ar', 'sg', 'dmr', 'lmg', 'sr', 'rl'], GUN_PER = 2; // mirrored in enemy.js
   const GUN_TARGET = GUN_LADDER.length * GUN_PER;
@@ -107,6 +108,7 @@
     if (e.code === 'Digit7') G.arsenal.switchTo('dmr');
     if (e.code === 'Digit8') G.arsenal.switchTo('lmg');
     if (e.code === 'KeyT') G.arsenal.callAirstrike();
+    if (e.code === 'KeyV' && G.veh) G.veh.tryToggle();
   });
   document.addEventListener('keyup', (e) => {
     keys[e.code] = false;
@@ -156,7 +158,7 @@
     const on = N && N.active && N.isHost && N.lobby;
     $('pauseHost').style.display = on ? '' : 'none';
     if (!on) return;
-    const ffa = N.matchCfg && (N.matchCfg.mode === 'ffa' || N.matchCfg.mode === 'gun');
+    const ffa = N.matchCfg && ['ffa', 'gun', 'royale'].includes(N.matchCfg.mode);
     $('pBotsALabel').textContent = ffa ? 'BOTS' : 'GREEN BOTS';
     $('pBotsBWrap').style.display = ffa ? 'none' : '';
     $('pauseSwapTip').textContent = ffa
@@ -463,7 +465,9 @@
     }
     G.fx.bloodBurst(new THREE.Vector3(player.pos.x, player.pos.y + 1.2, player.pos.z), new THREE.Vector3(0, 1, 0), 14, 5);
     $('deathKiller').textContent = killerName;
+    $('deathTimer').parentElement.style.display = game.noRespawn ? 'none' : '';
     $('deathTip').textContent = U.pick(TIPS);
+    if (G.veh && G.veh.mine) G.veh.tryToggle(); // dead men drive nothing
     $('death').style.display = 'flex';
     G.arsenal.fireUp(); G.arsenal.adsUp();
     if (Math.random() < 0.45 && attacker && attacker.name && attacker.group) {
@@ -523,7 +527,7 @@
   ];
   function myDisplayName() { return G.net && G.net.active ? G.net.myName : 'YOU'; }
   // ffa/gun standings: one tally per display name, fed exactly once per kill
-  const ENV_KILLERS = { 'YOURSELF': 1, 'THE SUBURBS': 1, 'THE VOLCANO': 1, 'SYSTEM': 1 };
+  const ENV_KILLERS = { 'YOURSELF': 1, 'THE SUBURBS': 1, 'THE VOLCANO': 1, 'SYSTEM': 1, 'THE WALL': 1, 'THE JEEP': 1, 'THE HELI': 1, 'A JEEP': 1, 'A HELI': 1 };
   function creditKill(name) {
     if (!name || !game.modeFFA || ENV_KILLERS[name]) return;
     game.modeKills[name] = (game.modeKills[name] || 0) + 1;
@@ -794,14 +798,145 @@
     }
   };
 
+  // ---------- demolition royale: the closing wall ----------
+  const royale = {
+    active: false, mesh: null, wallMat: null,
+    plan: [], finalDps: 26,
+    total: 0, counted: false, dmgT: 0, lastPhase: -1,
+  };
+  function mulberry(seed) {
+    let a = seed | 0;
+    return function () {
+      a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  royale.start = function (seed) {
+    royale.stop();
+    const b = G.world.bounds;
+    const rnd = mulberry(seed === undefined ? (Math.random() * 1e9) | 0 : seed);
+    let r = Math.hypot(b.x, b.z) * 1.05, cx = 0, cz = 0, t = 0;
+    const PH = [
+      { wait: 18, shrink: 22, mul: 0.62, dps: 2.5 },
+      { wait: 14, shrink: 18, mul: 0.55, dps: 5 },
+      { wait: 12, shrink: 16, mul: 0.5, dps: 8 },
+      { wait: 10, shrink: 12, mul: 0.42, dps: 12 },
+      { wait: 8, shrink: 10, mul: 0.3, dps: 16 },
+      { wait: 8, shrink: 10, mul: 0.12, dps: 22 },
+    ];
+    royale.plan = [];
+    for (const p of PH) {
+      const nr = r * p.mul;
+      const wiggle = (r - nr) * 0.7;
+      const ncx = U.clamp(cx + (rnd() * 2 - 1) * wiggle, -b.x * 0.7, b.x * 0.7);
+      const ncz = U.clamp(cz + (rnd() * 2 - 1) * wiggle, -b.z * 0.7, b.z * 0.7);
+      t += p.wait;
+      royale.plan.push({ t0: t, t1: t + p.shrink, fr: r, fcx: cx, fcz: cz, tr: nr, tcx: ncx, tcz: ncz, dps: p.dps });
+      t += p.shrink;
+      r = nr; cx = ncx; cz = ncz;
+    }
+    const wallMat = new THREE.MeshBasicMaterial({ color: 0xff7733, transparent: true, opacity: 0.17, side: THREE.DoubleSide, depthWrite: false });
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 70, 44, 1, true), wallMat);
+    mesh.position.y = 35;
+    scene.add(mesh);
+    royale.mesh = mesh;
+    royale.wallMat = wallMat;
+    royale.total = 0; royale.counted = false;
+    royale.dmgT = 0; royale.lastPhase = -1;
+    game.zone = { x: 0, z: 0, r: royale.plan[0].fr };
+    royale.active = true;
+  };
+  royale.stop = function () {
+    royale.active = false;
+    game.zone = null;
+    if (royale.mesh) {
+      scene.remove(royale.mesh);
+      royale.mesh.geometry.dispose();
+      royale.wallMat.dispose();
+      royale.mesh = null; royale.wallMat = null;
+    }
+  };
+  function royaleAliveCount() {
+    let n = player.alive ? 1 : 0;
+    for (const b of G.botMgr.bots) if (b.alive) n++;
+    if (G.net && G.net.active) for (const rp of G.net.remoteList) if (rp.alive) n++;
+    return n;
+  }
+  royale.update = function (dt) {
+    if (!royale.active || game.mode !== 'royale') return;
+    if (!royale.counted && G.botMgr.bots.length) { royale.total = royaleAliveCount(); royale.counted = true; }
+    // where is the wall right now (derived from the synced match clock)
+    const elapsed = Math.max(0, (game.totalT || 600) - (isFinite(game.matchT) ? game.matchT : 0));
+    let r = royale.plan[0].fr, cx = 0, cz = 0, dps = royale.plan[0].dps, phase = 0;
+    for (let i = 0; i < royale.plan.length; i++) {
+      const p = royale.plan[i];
+      if (elapsed < p.t0) break;
+      phase = i;
+      if (elapsed >= p.t1) { r = p.tr; cx = p.tcx; cz = p.tcz; dps = royale.plan[i + 1] ? royale.plan[i + 1].dps : royale.finalDps; }
+      else {
+        const k = (elapsed - p.t0) / (p.t1 - p.t0);
+        r = U.lerp(p.fr, p.tr, k); cx = U.lerp(p.fcx, p.tcx, k); cz = U.lerp(p.fcz, p.tcz, k);
+        dps = p.dps;
+      }
+    }
+    if (phase !== royale.lastPhase && elapsed >= royale.plan[phase].t0 && elapsed < royale.plan[phase].t1) {
+      royale.lastPhase = phase;
+      game.banner('THE WALL IS CLOSING', '#ff7733');
+      G.audio.airstrikeCall();
+    }
+    game.zone = { x: cx, z: cz, r };
+    royale.mesh.position.x = cx;
+    royale.mesh.position.z = cz;
+    royale.mesh.scale.set(r, 1, r);
+    royale.wallMat.opacity = 0.14 + Math.sin(game.time * 2.2) * 0.04;
+    // the wall hurts: I damage myself locally, the host handles the bots
+    royale.dmgT += dt;
+    if (royale.dmgT >= 1) {
+      royale.dmgT -= 1;
+      const wallGuy = { name: 'THE WALL', team: -1 };
+      if (player.alive && U.dist2d(player.pos.x, player.pos.z, cx, cz) > r) {
+        game.onPlayerDamage(dps, new THREE.Vector3(cx, 0, cz), wallGuy, 'zone');
+      }
+      if (!(G.net && G.net.active && !G.net.isHost)) {
+        const dir = new THREE.Vector3(0, 1, 0);
+        for (const b of G.botMgr.bots) {
+          if (!b.alive) continue;
+          const bp = b.group.position;
+          if (U.dist2d(bp.x, bp.z, cx, cz) > r) b.damage(dps, dir, { attacker: wallGuy, cause: 'explosion', tag: 'THE WALL' });
+        }
+        royaleCheckEnd();
+      }
+    }
+  };
+  // last block standing (host / solo authoritative)
+  function royaleCheckEnd() {
+    if (game.state === 'over' || game.mode !== 'royale' || !royale.counted) return;
+    if (G.net && G.net.active && !G.net.isHost) return;
+    const alive = royaleAliveCount();
+    if (alive > 1 && game.matchT > 0) return;
+    // find the survivor (or the top killer at the buzzer)
+    let winName = null, meWin = false;
+    if (player.alive) { winName = myDisplayName(); meWin = true; }
+    if (!winName) for (const b of G.botMgr.bots) if (b.alive) { winName = b.name; break; }
+    if (!winName && G.net && G.net.active) for (const rp of G.net.remoteList) if (rp.alive) { winName = rp.name; break; }
+    if (!winName) winName = ffaLeader(false).name;
+    if (G.net && G.net.active) G.net.evEnd(meWin ? -2 : -2, winName);
+    endMatch(meWin, false, winName, meWin ? 'LAST BLOCK STANDING' : null);
+  }
+
   // ---------- match flow ----------
   function baseStartMatch(cfg) {
     G.world.reset(cfg.map);  // build the chosen map fresh
     G.fx.reset();            // no leftover blood/debris/smoke
     game.mode = cfg.mode || 'tdm';
-    game.modeFFA = game.mode === 'ffa' || game.mode === 'gun';
+    game.modeFFA = game.mode === 'ffa' || game.mode === 'gun' || game.mode === 'royale';
     game.modeKills = {};
     if (game.mode === 'koth') koth.start(); else koth.stop();
+    if (game.mode === 'royale') royale.start(cfg.zseed); else royale.stop();
+    game.noRespawn = game.mode === 'royale';
+    if (G.veh) G.veh.reset(); // park the map's fleet
     player.team = cfg.myTeam || 0;
     player.hp = 100; player.alive = true;
     player.kills = 0; player.deaths = 0; player.streak = 0; player.bestStreak = 0;
@@ -865,7 +1000,7 @@
     // roster shape depends on the mode
     let roster;
     if (mode === 'tdm' || mode === 'koth') roster = G.botMgr.rosterFor([settings.botsAlly, settings.bots]);
-    else if (mode === 'ffa' || mode === 'gun') { // every bot is its own team (player is team 0)
+    else if (mode === 'ffa' || mode === 'gun' || mode === 'royale') { // every bot is its own team (player is team 0)
       const counts = [0];
       for (let i = 0; i < settings.bots; i++) counts.push(1);
       roster = G.botMgr.rosterFor(counts);
@@ -889,6 +1024,7 @@
   function checkEnd() {
     if (game.state === 'over') return;
     if (G.net && G.net.active && !G.net.isHost) return; // host decides
+    if (game.mode === 'royale') { royaleCheckEnd(); return; }
     if (game.modeFFA) {
       // kill race between individuals: first to the target, or top score at time
       const lead = ffaLeader(false);
@@ -909,15 +1045,17 @@
       endMatch(winTeam === player.team, winTeam === -1);
     }
   }
-  function endMatch(win, draw, winnerName) {
+  function endMatch(win, draw, winnerName, customTitle) {
     game.state = 'over';
     game.paused = false;
     koth.stop();
+    royale.stop();
     document.exitPointerLock && document.exitPointerLock();
     $('hud').style.display = 'none';
     $('death').style.display = 'none';
     const t = $('endTitle');
-    if (draw) { t.textContent = 'DRAW'; }
+    if (customTitle) { t.textContent = customTitle; }
+    else if (draw) { t.textContent = 'DRAW'; }
     else if (win) { t.textContent = 'VICTORY'; }
     else if (winnerName) { t.textContent = (winnerName === 'YOU' ? 'YOU WIN' : winnerName + ' WINS'); }
     else { t.textContent = 'DEFEATED'; }
@@ -1001,9 +1139,16 @@
     // ammo (yellow when low, red when empty)
     const st = G.arsenal.state[G.arsenal.currentId];
     const def = G.arsenal.def();
-    $('ammo').textContent = st.ammo + ' / ' + (game.mode === 'gun' ? '∞' : st.reserve);
-    $('ammo').style.color = st.ammo === 0 ? '#e83333' : (st.ammo <= Math.max(1, def.mag * 0.25) ? '#e8a020' : '#111');
-    $('wname').textContent = def.name + (G.arsenal.reloading && G.arsenal.reloading() ? ' — RELOADING' : '');
+    if (G.veh && G.veh.mine) {
+      const v = G.veh.mine;
+      $('ammo').textContent = Math.max(0, Math.round(v.hp)) + ' HP';
+      $('ammo').style.color = v.hp < v.def.hp * 0.35 ? '#e83333' : '#111';
+      $('wname').textContent = v.def.name + ' — [V] TO BAIL';
+    } else {
+      $('ammo').textContent = st.ammo + ' / ' + (game.mode === 'gun' ? '∞' : st.reserve);
+      $('ammo').style.color = st.ammo === 0 ? '#e83333' : (st.ammo <= Math.max(1, def.mag * 0.25) ? '#e8a020' : '#111');
+      $('wname').textContent = def.name + (G.arsenal.reloading && G.arsenal.reloading() ? ' — RELOADING' : '');
+    }
     $('nades').textContent = '✸ ' + G.arsenal.grenades;
     // score (mine first) — team points, or my kills vs the best rival in ffa/gun
     const wl = $('winlabel');
@@ -1047,13 +1192,21 @@
 
   // ---------- minimap ----------
   const mmStatic = document.createElement('canvas');
-  const MMS = 2.2;
-  const MMOX = 72, MMOZ = 58;
-  mmStatic.width = Math.ceil(144 * MMS); mmStatic.height = Math.ceil(116 * MMS);
+  const MM = { s: 2.2, ox: 72, oz: 58, w: 144, h: 116 }; // refreshed from W.mmBox per map
+  function refreshMMBox() {
+    const b = G.world.mmBox || { w: 144, h: 116, ox: 72, oz: 58 };
+    MM.w = b.w; MM.h = b.h; MM.ox = b.ox; MM.oz = b.oz;
+    MM.s = Math.min(2.2, 320 / b.w); // bigger maps get a coarser (but complete) bitmap
+    mmStatic.width = Math.ceil(MM.w * MM.s);
+    mmStatic.height = Math.ceil(MM.h * MM.s);
+  }
+  refreshMMBox();
   let staticMapDirty = true, staticMapT = 0;
   const MM_WALL_COLORS = { fence: '#7a4f28', chainlink: '#aab2ba', plank: '#c9a05f', bamboo: '#b6a14e', block: '#94979b', hull: '#e8ecf2', wood: '#9a6b3a', city: '#c9ced6' };
   function redrawStaticMap() {
+    refreshMMBox();
     const x = mmStatic.getContext('2d');
+    const MMS = MM.s, MMOX = MM.ox, MMOZ = MM.oz;
     const w2m = (wx, wz) => [(wx + MMOX) * MMS, (wz + MMOZ) * MMS];
     if (G.world.minimapPaint) {
       G.world.minimapPaint(x, MMS, MMOX, MMOZ);
@@ -1109,8 +1262,8 @@
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);
-    const s = MMS;
-    x.drawImage(mmStatic, (-MMOX - player.pos.x) * s, (-MMOZ - player.pos.z) * s);
+    const s = MM.s;
+    x.drawImage(mmStatic, (-MM.ox - player.pos.x) * s, (-MM.oz - player.pos.z) * s);
     // bots: teammates always green, enemies red when firing or under UAV
     for (const b of G.botMgr.bots) {
       if (!b.alive) continue;
@@ -1131,6 +1284,23 @@
         x.beginPath(); x.arc(dx, dz, 3.8, 0, 7); x.fill();
         if (friendly) { x.strokeStyle = '#fff'; x.lineWidth = 1.5; x.stroke(); }
       }
+    }
+    // the wall (royale): everything outside the white ring hurts
+    if (game.zone) {
+      const dx = (game.zone.x - player.pos.x) * s, dz = (game.zone.z - player.pos.z) * s;
+      x.beginPath(); x.arc(dx, dz, game.zone.r * s, 0, 7);
+      x.strokeStyle = '#ffffff'; x.lineWidth = 2.5; x.stroke();
+      x.strokeStyle = 'rgba(255,119,51,0.7)'; x.lineWidth = 5;
+      x.beginPath(); x.arc(dx, dz, game.zone.r * s + 4, 0, 7); x.stroke();
+    }
+    // vehicles: little grey blocks worth sprinting for
+    if (G.veh) for (const v of G.veh.list) {
+      if (v.dead) continue;
+      const dx = (v.pos.x - player.pos.x) * s, dz = (v.pos.z - player.pos.z) * s;
+      x.fillStyle = v.driver ? '#ffd23e' : '#e8ecf2';
+      x.strokeStyle = '#111'; x.lineWidth = 1.2;
+      x.fillRect(dx - 3.4, dz - 3.4, 6.8, 6.8);
+      x.strokeRect(dx - 3.4, dz - 3.4, 6.8, 6.8);
     }
     // the hill (koth): a gold ring you can navigate by
     if (game.mode === 'koth' && game.hillPos) {
@@ -1188,7 +1358,7 @@
     const teams = m === 'tdm' || m === 'koth';
     $('allyWrap').style.display = teams ? '' : 'none';
     $('botCountLabel').textContent = teams ? 'ENEMY BOTS' : 'BOTS';
-    $('targetWrap').style.display = m === 'gun' ? 'none' : '';
+    $('targetWrap').style.display = (m === 'gun' || m === 'royale') ? 'none' : '';
     $('targetLabel').textContent = m === 'koth' ? 'SCORE TO WIN' : 'KILLS TO WIN';
     $('modeDesc').textContent = (MODES[m] || MODES.vsworld).desc;
     // nudge the win target to a sane default when hopping between point/kill modes
@@ -1295,6 +1465,7 @@
     $('end').style.display = 'none';
     $('hud').style.display = 'none';
     koth.stop();
+    royale.stop();
   }
   function showLobby() {
     game.state = 'menu';
@@ -1312,7 +1483,7 @@
     $('lobbyLink').value = N.link();
     if (document.activeElement !== $('lobbyName')) $('lobbyName').value = N.myName;
     const mode = N.lobby.cfg.mode || 'tdm';
-    const ffa = mode === 'ffa' || mode === 'gun';
+    const ffa = mode === 'ffa' || mode === 'gun' || mode === 'royale';
     // players grouped by team (or one big pile in free-for-all)
     let html = '';
     if (ffa) {
@@ -1355,7 +1526,7 @@
     $('lobbySwapTip').textContent = ffa ? 'free-for-all: teams don\'t apply' : 'click a player to swap their team';
     $('botsALabel').textContent = ffa ? 'BOTS' : 'GREEN BOTS';
     $('botsBWrap').style.display = ffa ? 'none' : '';
-    $('lobbyTargetWrap').style.display = mode === 'gun' ? 'none' : '';
+    $('lobbyTargetWrap').style.display = (mode === 'gun' || mode === 'royale') ? 'none' : '';
     $('lobbyTargetLabel').textContent = mode === 'koth' ? 'SCORE TO WIN' : 'KILLS TO WIN';
     document.querySelectorAll('.hostonly').forEach(el => { el.style.display = isHost ? '' : 'none'; });
     $('lobbyWait').style.display = isHost ? 'none' : 'block';
@@ -1519,12 +1690,18 @@
       G.fx.update(dt, camera);
       G.world.update(dt);
     } else if (game.state === 'playing' || game.state === 'dead') {
-      if (game.state === 'playing') updatePlayer(dt);
+      if (game.state === 'playing' && !(G.veh && G.veh.driving())) updatePlayer(dt);
+      if (G.veh) G.veh.update(dt, keys);
       if (game.state === 'dead') {
         player.deathT -= dt;
         $('deathTimer').textContent = Math.max(0, player.deathT).toFixed(1);
         // whatever happens, the death screen must never trap you
-        if (player.deathT <= 0 || !isFinite(player.deathT)) respawnPlayer();
+        if (player.deathT <= 0 || !isFinite(player.deathT)) {
+          if (game.noRespawn) { // royale: you're out — show the placement
+            const place = royaleAliveCount() + 1;
+            endMatch(false, false, null, 'ELIMINATED — #' + place + ' OF ' + (royale.total || place));
+          } else respawnPlayer();
+        }
       }
       G.arsenal.update(dt);
       G.botMgr.update(dt);
@@ -1533,6 +1710,7 @@
       if (G.net) G.net.update(dt);
       decayRadar(dt);
       koth.update(dt);
+      royale.update(dt);
       updateCamera(dt);
       updateHUD(dt);
       game.lookDX = 0; game.lookDY = 0;
