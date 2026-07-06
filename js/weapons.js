@@ -7,21 +7,21 @@ G.arsenal = (function () {
     ar: { name: 'M4 RATTLER', kind: 'ar', auto: true, interval: 0.088, dmg: 26, headMul: 2.3, mag: 45, reserve: 225,
           spread: 1.15, bloomPer: 0.62, bloomMax: 4.2, adsMul: 0.32, recoil: 1.35, chunkDmg: 15, reload: 1.9, pellets: 1,
           falloff: 95, falloffStart: 24, falloffFloor: 0.55 },
-    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.7, dmg: 14, headMul: 1.6, mag: 10, reserve: 40,
+    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.78, dmg: 13, headMul: 1.35, mag: 10, reserve: 40,
           spread: 4.4, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.6, chunkDmg: 9, reload: 2.5, pellets: 8,
-          falloff: 34, falloffStart: 8, falloffFloor: 0.35 },
-    sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.2, dmg: 96, headMul: 2.1, mag: 5, reserve: 25,
+          falloff: 30, falloffStart: 6, falloffFloor: 0.32 },
+    sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.2, dmg: 88, headMul: 2.3, mag: 5, reserve: 25,
           spread: 5.5, bloomPer: 0, bloomMax: 6, adsMul: 0.012, recoil: 3.4, chunkDmg: 40, reload: 2.9, pellets: 1 },
     rl:  { name: 'HOA VIOLATION', kind: 'rl', auto: false, interval: 1.1, mag: 1, reserve: 5,
           spread: 0.4, bloomPer: 0, bloomMax: 1, adsMul: 0.5, recoil: 4, reload: 2.3, pellets: 0 },
     // the second rack: distinct roles, tuned around the classics
-    rev: { name: 'SIX IRON', kind: 'rev', auto: false, interval: 0.34, dmg: 38, headMul: 2.4, mag: 6, reserve: 36,
+    rev: { name: 'SIX IRON', kind: 'rev', auto: false, interval: 0.34, dmg: 38, headMul: 2.0, mag: 6, reserve: 36,
           spread: 1.0, bloomPer: 0.55, bloomMax: 3.2, adsMul: 0.35, recoil: 2.0, chunkDmg: 14, reload: 2.2, pellets: 1,
           falloff: 70, falloffStart: 16, falloffFloor: 0.5 },
-    smg: { name: 'LEAF BLOWER', kind: 'smg', auto: true, interval: 0.055, dmg: 15, headMul: 2.0, mag: 42, reserve: 210,
+    smg: { name: 'LEAF BLOWER', kind: 'smg', auto: true, interval: 0.055, dmg: 15, headMul: 2.0, mag: 60, reserve: 240,
           spread: 1.7, bloomPer: 0.5, bloomMax: 5.5, adsMul: 0.45, recoil: 0.9, chunkDmg: 8, reload: 1.7, pellets: 1,
           falloff: 45, falloffStart: 9, falloffFloor: 0.35 },
-    dmr: { name: 'PROPERTY LINE', kind: 'dmr', auto: false, interval: 0.3, dmg: 38, headMul: 1.4, mag: 12, reserve: 60,
+    dmr: { name: 'PROPERTY LINE', kind: 'dmr', auto: false, interval: 0.36, dmg: 38, headMul: 1.4, mag: 12, reserve: 60,
           spread: 0.5, bloomPer: 0.9, bloomMax: 3.5, adsMul: 0.15, recoil: 1.9, chunkDmg: 22, reload: 2.2, pellets: 1,
           falloff: 140, falloffStart: 40, falloffFloor: 0.7 },
     lmg: { name: 'LAWN ENFORCER', kind: 'lmg', auto: true, interval: 0.105, dmg: 19, headMul: 2.0, mag: 80, reserve: 160,
@@ -134,6 +134,9 @@ G.arsenal = (function () {
     const smgMag = box(0.045, 0.2, 0.07, gunMat2); smgMag.position.set(0, -0.15, -0.04); smg.add(smgMag);
     const smgGrip = box(0.05, 0.11, 0.06, gunMat2); smgGrip.position.set(0, -0.1, 0.13); smg.add(smgGrip);
     const smgStock = box(0.025, 0.03, 0.2, gunMat2); smgStock.position.set(0, 0.02, 0.3); smg.add(smgStock);
+    const smgFront = box(0.012, 0.035, 0.014, gunMat); smgFront.position.set(0, 0.077, -0.32); smg.add(smgFront);
+    const smgRearL = box(0.011, 0.028, 0.014, gunMat); smgRearL.position.set(-0.016, 0.074, 0.12); smg.add(smgRearL);
+    const smgRearR = box(0.011, 0.028, 0.014, gunMat); smgRearR.position.set(0.016, 0.074, 0.12); smg.add(smgRearR);
     smg.userData.mag = smgMag;
     models.smg = smg;
 
@@ -157,6 +160,11 @@ G.arsenal = (function () {
     const lmgStock = box(0.06, 0.11, 0.2, gunMat2); lmgStock.position.set(0, -0.01, 0.38); lmg.add(lmgStock);
     const bipodL = box(0.015, 0.12, 0.015, gunMat2); bipodL.position.set(-0.04, -0.1, -0.5); bipodL.rotation.z = 0.25; lmg.add(bipodL);
     const bipodR = box(0.015, 0.12, 0.015, gunMat2); bipodR.position.set(0.04, -0.1, -0.5); bipodR.rotation.z = -0.25; lmg.add(bipodR);
+    const lmgTube = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.07, 10, 1, true), gunMat2);
+    lmgTube.rotation.x = Math.PI / 2; lmgTube.position.set(0, 0.115, -0.06); lmg.add(lmgTube);
+    const lmgBase = box(0.04, 0.03, 0.06, gunMat2); lmgBase.position.set(0, 0.085, -0.06); lmg.add(lmgBase);
+    const lmgDot = new THREE.Mesh(new THREE.PlaneGeometry(0.012, 0.012), new THREE.MeshBasicMaterial({ color: 0xffb020, transparent: true, depthWrite: false }));
+    lmgDot.position.set(0, 0.115, -0.055); lmg.add(lmgDot);
     lmg.userData.mag = lmgBox;
     models.lmg = lmg;
 
@@ -183,7 +191,7 @@ G.arsenal = (function () {
   const HIP = { x: 0.33, y: -0.31, z: -0.62 };
   const ADS = {
     ar: { x: 0, y: -0.118, z: -0.46 }, sg: { x: 0, y: -0.08, z: -0.54 }, sr: { x: 0, y: -0.115, z: -0.5 }, rl: { x: 0.14, y: -0.14, z: -0.52 },
-    rev: { x: 0, y: -0.1, z: -0.4 }, smg: { x: 0, y: -0.105, z: -0.42 }, dmr: { x: 0, y: -0.128, z: -0.48 }, lmg: { x: 0, y: -0.125, z: -0.5 },
+    rev: { x: 0, y: -0.07, z: -0.4 }, smg: { x: 0, y: -0.077, z: -0.42 }, dmr: { x: 0, y: -0.128, z: -0.48 }, lmg: { x: 0, y: -0.115, z: -0.5 },
   };
 
   // ---------- init ----------
