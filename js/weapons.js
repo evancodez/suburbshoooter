@@ -123,8 +123,8 @@ G.arsenal = (function () {
     const cylinderR = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.09, 8), gunMat2);
     cylinderR.rotation.x = Math.PI / 2; cylinderR.position.set(0, 0.012, -0.06); rev.add(cylinderR);
     const revGrip = box(0.042, 0.115, 0.055, woodMat); revGrip.position.set(0, -0.075, 0.15); revGrip.rotation.x = 0.5; rev.add(revGrip);
-    const revHammer = box(0.014, 0.045, 0.022, gunMat2); revHammer.position.set(0, 0.062, 0.13); revHammer.rotation.x = -0.5; rev.add(revHammer);
-    const revSight = box(0.012, 0.026, 0.02, gunMat); revSight.position.set(0, 0.07, -0.38); rev.add(revSight);
+    const revHammer = box(0.009, 0.026, 0.016, gunMat2); revHammer.position.set(0, 0.046, 0.13); revHammer.rotation.x = -0.5; rev.add(revHammer);
+    const revSight = box(0.008, 0.022, 0.014, gunMat); revSight.position.set(0, 0.059, -0.38); rev.add(revSight);
     models.rev = rev;
 
     // --- SMG ---
@@ -134,9 +134,9 @@ G.arsenal = (function () {
     const smgMag = box(0.045, 0.2, 0.07, gunMat2); smgMag.position.set(0, -0.15, -0.04); smg.add(smgMag);
     const smgGrip = box(0.05, 0.11, 0.06, gunMat2); smgGrip.position.set(0, -0.1, 0.13); smg.add(smgGrip);
     const smgStock = box(0.025, 0.03, 0.2, gunMat2); smgStock.position.set(0, 0.02, 0.3); smg.add(smgStock);
-    const smgFront = box(0.012, 0.035, 0.014, gunMat); smgFront.position.set(0, 0.077, -0.32); smg.add(smgFront);
-    const smgRearL = box(0.011, 0.028, 0.014, gunMat); smgRearL.position.set(-0.016, 0.074, 0.12); smg.add(smgRearL);
-    const smgRearR = box(0.011, 0.028, 0.014, gunMat); smgRearR.position.set(0.016, 0.074, 0.12); smg.add(smgRearR);
+    const smgFront = box(0.009, 0.026, 0.012, gunMat); smgFront.position.set(0, 0.064, -0.32); smg.add(smgFront);
+    const smgRearL = box(0.006, 0.018, 0.012, gunMat); smgRearL.position.set(-0.024, 0.068, 0.12); smg.add(smgRearL);
+    const smgRearR = box(0.006, 0.018, 0.012, gunMat); smgRearR.position.set(0.024, 0.068, 0.12); smg.add(smgRearR);
     smg.userData.mag = smgMag;
     models.smg = smg;
 
@@ -191,7 +191,7 @@ G.arsenal = (function () {
   const HIP = { x: 0.33, y: -0.31, z: -0.62 };
   const ADS = {
     ar: { x: 0, y: -0.118, z: -0.46 }, sg: { x: 0, y: -0.08, z: -0.54 }, sr: { x: 0, y: -0.115, z: -0.5 }, rl: { x: 0.14, y: -0.14, z: -0.52 },
-    rev: { x: 0, y: -0.07, z: -0.4 }, smg: { x: 0, y: -0.077, z: -0.42 }, dmr: { x: 0, y: -0.128, z: -0.48 }, lmg: { x: 0, y: -0.115, z: -0.5 },
+    rev: { x: 0, y: -0.07, z: -0.47 }, smg: { x: 0, y: -0.077, z: -0.5 }, dmr: { x: 0, y: -0.128, z: -0.48 }, lmg: { x: 0, y: -0.115, z: -0.5 },
   };
 
   // ---------- init ----------
