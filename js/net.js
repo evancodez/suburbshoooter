@@ -159,11 +159,6 @@ G.net = (function () {
   };
   // win: team index (team modes) — wn: winner's display name (ffa/gun modes)
   N.evEnd = (win, wn) => { if (N.isHost) bc({ t: 'end', win, wn }); };
-  // vehicles: drivers stream state; damage resolves on the host
-  N.evVeh = (v) => out({ t: 'vst', i: v.i, x: +v.pos.x.toFixed(1), y: +v.pos.y.toFixed(1), z: +v.pos.z.toFixed(1), yw: +v.yaw.toFixed(2), drv: v.driver === 'me' ? N.myId : '' });
-  N.evVehDmg = (i, d) => { const m = { t: 'vdm', i, d: Math.round(d) }; if (N.isHost) handle(m, null); else toHost(m); };
-  N.evVehHp = (i, hp) => { if (N.isHost) bc({ t: 'vhp', i, hp: Math.round(hp) }); };
-  N.evVehBoom = (i) => { if (N.isHost) bc({ t: 'vbx', i }); };
 
   function routeDmgP(msg) {
     // host: deliver to target (or self), relay so nothing else needs it
@@ -354,15 +349,6 @@ G.net = (function () {
         break;
       case 'died': if (N.isHost) hostHandleDied(msg); break;
       case 'end': if (!N.isHost && G.game) G.game.onNetEnd(msg.win, msg.wn); break;
-      case 'vst':
-        if (G.veh) G.veh.applyState(msg.i, msg);
-        relay(msg, fromConn);
-        break;
-      case 'vdm':
-        if (N.isHost && G.veh && G.veh.list[msg.i]) G.veh.damage(G.veh.list[msg.i], msg.d);
-        break;
-      case 'vhp': if (!N.isHost && G.veh) G.veh.applyHp(msg.i, msg.hp); break;
-      case 'vbx': if (!N.isHost && G.veh) G.veh.applyBoom(msg.i); break;
     }
   }
   function relay(msg, fromConn) { if (N.isHost) bc(msg, fromConn); }
@@ -530,10 +516,9 @@ G.net = (function () {
   N.startMatch = function () {
     if (!N.isHost || !N.lobby) return;
     const mode = N.lobby.cfg.mode || 'tdm';
-    const ffa = mode === 'ffa' || mode === 'gun' || mode === 'royale';
+    const ffa = mode === 'ffa' || mode === 'gun';
     const cfg = {
       mode,
-      zseed: mode === 'royale' ? (Math.random() * 1e9) | 0 : undefined,
       botsA: N.lobby.cfg.botsA, botsB: N.lobby.cfg.botsB,
       diff: N.lobby.cfg.diff,
       target: N.lobby.cfg.target || 30,
@@ -564,7 +549,7 @@ G.net = (function () {
     if (!N.isHost || !N.active || !N.lobby) return;
     N.lobby.cfg.botsA = a;
     N.lobby.cfg.botsB = b;
-    const ffa = N.matchCfg && ['ffa', 'gun', 'royale'].includes(N.matchCfg.mode);
+    const ffa = N.matchCfg && (N.matchCfg.mode === 'ffa' || N.matchCfg.mode === 'gun');
     const roster = ffa ? G.botMgr.rosterFor(ffaCounts(a + b)) : G.botMgr.rosterFor([a, b]);
     N.matchRoster = roster;
     bc({ t: 'roster', roster });
@@ -622,7 +607,6 @@ G.net = (function () {
         yw: +P.yaw.toFixed(2), pt: +P.pitch.toFixed(2), sp: +spd.toFixed(1),
         al: P.alive ? 1 : 0, w: G.arsenal.currentId,
       });
-      if (G.veh && G.veh.mine) N.evVeh(G.veh.mine);
     }
     // host: bot snapshots
     if (N.isHost) {

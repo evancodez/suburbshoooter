@@ -268,7 +268,6 @@ G.arsenal = (function () {
 
   // ---------- firing ----------
   function shoot() {
-    if (G.veh && G.veh.driving()) return; // hands on the wheel
     const def = DEFS[A.currentId], st = state[A.currentId];
     if (st.ammo <= 0) {
       G.audio.click();
@@ -419,7 +418,6 @@ G.arsenal = (function () {
   };
   A.allNades = () => A.nades;
   A.throwNade = function () {
-    if (G.veh && G.veh.driving()) return;
     if (A.grenades <= 0 || !G.player.alive) return;
     A.grenades--;
     camera.getWorldDirection(camFwd);
@@ -550,7 +548,6 @@ G.arsenal = (function () {
 
   // ---------- melee ----------
   A.melee = function () {
-    if (G.veh && G.veh.driving()) return;
     if (meleeCd > 0 || !G.player.alive) return;
     meleeCd = 0.6;
     meleeT = 0;

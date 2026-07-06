@@ -560,7 +560,7 @@ G.botMgr = (function () {
   function updateBot(bot, dt) {
     if (!bot.alive) {
       updateCorpse(bot, dt);
-      if (!M.puppet && !(G.game && G.game.noRespawn)) {
+      if (!M.puppet) {
         bot.respawnT -= dt;
         if (bot.respawnT <= 0 && bot.corpseT <= 0) respawn(bot);
       }
@@ -687,22 +687,6 @@ G.botMgr = (function () {
       }
     }
 
-    // the wall (royale): being outside it beats every other plan
-    const zone = G.game && G.game.zone;
-    if (zone && !bot.climb && bot.state !== 'ladder' && bot.state !== 'stairs') {
-      const dz2 = U.dist2d(bp.x, bp.z, zone.x, zone.z);
-      if (dz2 > zone.r * 0.97) {
-        bot.zoneT = (bot.zoneT || 0) - dt;
-        if (bot.zoneT <= 0 || !bot.path) {
-          bot.zoneT = 1.6;
-          const s = scatter(bot, zone.x, zone.z, Math.max(5, zone.r * 0.45));
-          bot.state = 'wander';
-          bot.campSpot = null;
-          setPath(bot, s.x, s.z);
-        }
-      }
-    }
-
     // grenade dodge
     if (G.arsenal && bot.fleeT <= 0) {
       for (const n of G.arsenal.allNades()) {
@@ -749,7 +733,6 @@ G.botMgr = (function () {
             const cx = U.clamp(anchor.x + Math.cos(a) * r, -bnd.x, bnd.x);
             const cz = U.clamp(anchor.z + Math.sin(a) * r, -bnd.z, bnd.z);
             if (inDanger(cx, cz, 2)) continue;
-            if (zone && U.dist2d(cx, cz, zone.x, zone.z) > zone.r * 0.9) continue; // not into the wall
             let minMate = 99;
             for (const other of M.bots) {
               if (other === bot || !other.alive || other.team !== bot.team) continue;
