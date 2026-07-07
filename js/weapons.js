@@ -15,7 +15,7 @@ G.arsenal = (function () {
     rl:  { name: 'HOA VIOLATION', kind: 'rl', auto: false, interval: 1.1, mag: 1, reserve: 5,
           spread: 0.4, bloomPer: 0, bloomMax: 1, adsMul: 0.5, recoil: 4, reload: 2.3, pellets: 0 },
     // the second rack: distinct roles, tuned around the classics
-    rev: { name: 'SIX IRON', kind: 'rev', auto: false, interval: 0.34, dmg: 38, headMul: 2.0, mag: 6, reserve: 36,
+    rev: { name: 'SIX IRON', kind: 'rev', auto: false, interval: 0.34, dmg: 40, headMul: 2.3, mag: 6, reserve: 36,
           spread: 1.0, bloomPer: 0.55, bloomMax: 3.2, adsMul: 0.35, recoil: 2.0, chunkDmg: 14, reload: 2.2, pellets: 1,
           falloff: 70, falloffStart: 16, falloffFloor: 0.5 },
     smg: { name: 'LEAF BLOWER', kind: 'smg', auto: true, interval: 0.055, dmg: 15, headMul: 2.0, mag: 60, reserve: 240,
