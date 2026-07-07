@@ -380,10 +380,9 @@ G.net = (function () {
     } else toHost({ t: 'name', name });
   };
   N.link = function () {
-    if (N.lanMode) {
-      const ip = N.lanInfo ? N.lanInfo.ip : location.hostname;
-      const port = N.lanInfo ? N.lanInfo.port : location.port;
-      return 'http://' + ip + ':' + port + '/?join=lan';
+    if (N.lanMode && N.lanInfo) {
+      // wifi friends open this and are routed through the relay automatically
+      return 'http://' + N.lanInfo.ip + ':' + N.lanInfo.port + '/?join=' + (N.code || 'lan').toLowerCase();
     }
     return location.origin + location.pathname + '?join=' + N.code;
   };
@@ -498,6 +497,21 @@ G.net = (function () {
         cb && cb();
       })
       .catch(() => errCb && errCb('no local server — wifi games need the game run via  python3 serve.py'));
+  };
+  // already hosting online: also register on the local relay so wifi friends
+  // who open this computer's address can join without touching the internet
+  N.lanAttach = function () {
+    if (lanActive || !N.isHost) return;
+    fetch('/lan/host', { method: 'POST', body: JSON.stringify({ pid: N.myId }) })
+      .then(r => r.json().then(d => ({ ok: r.ok, d })))
+      .then(({ ok, d }) => {
+        if (!ok) return; // someone else on this machine hosts — fine, ignore
+        N.lanMode = true;
+        N.lanInfo = d;
+        lanActive = true;
+        lanTimer = setInterval(lanTick, 60);
+      })
+      .catch(() => {});
   };
   N.joinLan = function (name, cb, errCb) {
     N.leave();

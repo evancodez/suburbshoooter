@@ -1425,9 +1425,20 @@
   $('hostBtn').addEventListener('click', () => {
     if (typeof Peer === 'undefined') { netError('peerjs.min.js missing'); return; }
     netStatus('creating game…');
-    G.net.host(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError, netStatus);
+    G.net.host(playerName(), () => {
+      $('mpStatus').textContent = '';
+      if (lanRelay) G.net.lanAttach(); // wifi friends join through this computer
+      showLobby();
+    }, (err) => {
+      // matchmaking server unreachable (blocked wifi): host on the LAN alone
+      if (lanRelay) G.net.hostLan(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
+      else netError(err);
+    }, netStatus);
   });
   function doJoin(code) {
+    // loaded from a computer on this wifi that's hosting? join through it —
+    // no internet or WebRTC needed, and it's certainly the game you meant
+    if (lanRelay && lanRelay.hostUp) { doJoinLan(); return; }
     // joiners may have no name yet — send '' and the host numbers them Guest1,
     // Guest2, …; they can rename themselves from inside the lobby
     let n = ($('nameInput').value || '').trim().slice(0, 14);
@@ -1441,7 +1452,6 @@
     const m = code.match(/join=([a-z0-9]+)/i);
     if (m) code = m[1];
     if (!code) { netError('paste a game link or code'); return; }
-    if (code.toLowerCase() === 'lan' || code.toLowerCase() === 'wifi') { doJoinLan(); return; }
     doJoin(code);
   });
   $('pBotsApply').addEventListener('click', () => {
@@ -1465,45 +1475,31 @@
     };
   }
   // shared link: join automatically — no button press needed
-  // ---------- wifi (LAN) games: relayed through the local python server ----------
+  // ---------- same-wifi play, no buttons: the game just knows ----------
+  // Served from a local computer (python3 serve.py), the server doubles as a
+  // message relay. HOST silently registers there too, and anyone who opened
+  // the game from that computer's address gets routed through it on JOIN —
+  // works even when the router blocks WebRTC. The Vercel site is unaffected.
+  let lanRelay = null; // /lan/info result when a local relay exists
+  const lanProbe = location.protocol === 'http:'
+    ? fetch('/lan/info').then(r => r.json()).then(d => { lanRelay = d || null; }).catch(() => {})
+    : Promise.resolve();
   function doJoinLan() {
     let n = ($('nameInput').value || '').trim().slice(0, 14);
     if (n) { settings.name = n; saveSettings(); }
-    netStatus('joining the wifi game…');
+    netStatus('connecting…');
     G.net.joinLan(n || 'Player' + U.randi(10, 99), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
-  }
-  $('lanBtn').addEventListener('click', () => {
-    if (location.protocol !== 'http:') {
-      netError('wifi games run from a local copy: get the game folder, run  python3 serve.py  on one computer, and everyone opens the address it prints');
-      return;
-    }
-    netStatus('starting wifi game…');
-    G.net.hostLan(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
-  });
-  $('lanJoinBtn').addEventListener('click', () => {
-    if (location.protocol !== 'http:') {
-      netError('open the game from the host\'s address (http://their-ip:8377) to join a wifi game');
-      return;
-    }
-    doJoinLan();
-  });
-  // running from a local server: peek at the relay so the buttons explain themselves
-  if (location.protocol === 'http:') {
-    fetch('/lan/info').then(r => r.json()).then(d => {
-      if (d && d.hostUp) $('lanHint').textContent = 'a wifi game is live on this network — hit JOIN WIFI GAME';
-      else if (d) $('lanHint').textContent = 'wifi play: host here, friends open http://' + d.ip + ':' + d.port;
-    }).catch(() => {});
-  } else {
-    $('lanHint').textContent = 'wifi play needs the game run locally (python3 serve.py) — great for routers that block online play';
   }
 
   const joinParam = new URLSearchParams(location.search).get('join');
-  if (joinParam === 'lan') {
-    doJoinLan();
-  } else if (joinParam) {
-    $('joinInput').value = joinParam;
-    if (typeof Peer !== 'undefined') doJoin(joinParam);
-    else netError('peerjs.min.js missing');
+  if (joinParam) {
+    // let the relay probe land first so wifi links route locally, not online
+    lanProbe.then(() => {
+      if (joinParam === 'lan' || (lanRelay && lanRelay.hostUp)) { doJoinLan(); return; }
+      $('joinInput').value = joinParam;
+      if (typeof Peer !== 'undefined') doJoin(joinParam);
+      else netError('peerjs.min.js missing');
+    });
   }
 
   // ---------- auto quality ----------
