@@ -1441,7 +1441,6 @@
     const m = code.match(/join=([a-z0-9]+)/i);
     if (m) code = m[1];
     if (!code) { netError('paste a game link or code'); return; }
-    if (code.toLowerCase() === 'lan' || code.toLowerCase() === 'wifi') { doJoinLan(); return; }
     doJoin(code);
   });
   $('pBotsApply').addEventListener('click', () => {
@@ -1465,42 +1464,8 @@
     };
   }
   // shared link: join automatically — no button press needed
-  // ---------- wifi (LAN) games: relayed through the local python server ----------
-  function doJoinLan() {
-    let n = ($('nameInput').value || '').trim().slice(0, 14);
-    if (n) { settings.name = n; saveSettings(); }
-    netStatus('joining the wifi game…');
-    G.net.joinLan(n || 'Player' + U.randi(10, 99), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
-  }
-  $('lanBtn').addEventListener('click', () => {
-    if (location.protocol !== 'http:') {
-      netError('wifi games run from a local copy: get the game folder, run  python3 serve.py  on one computer, and everyone opens the address it prints');
-      return;
-    }
-    netStatus('starting wifi game…');
-    G.net.hostLan(playerName(), () => { $('mpStatus').textContent = ''; showLobby(); }, netError);
-  });
-  $('lanJoinBtn').addEventListener('click', () => {
-    if (location.protocol !== 'http:') {
-      netError('open the game from the host\'s address (http://their-ip:8377) to join a wifi game');
-      return;
-    }
-    doJoinLan();
-  });
-  // running from a local server: peek at the relay so the buttons explain themselves
-  if (location.protocol === 'http:') {
-    fetch('/lan/info').then(r => r.json()).then(d => {
-      if (d && d.hostUp) $('lanHint').textContent = 'a wifi game is live on this network — hit JOIN WIFI GAME';
-      else if (d) $('lanHint').textContent = 'wifi play: host here, friends open http://' + d.ip + ':' + d.port;
-    }).catch(() => {});
-  } else {
-    $('lanHint').textContent = 'wifi play needs the game run locally (python3 serve.py) — great for routers that block online play';
-  }
-
   const joinParam = new URLSearchParams(location.search).get('join');
-  if (joinParam === 'lan') {
-    doJoinLan();
-  } else if (joinParam) {
+  if (joinParam) {
     $('joinInput').value = joinParam;
     if (typeof Peer !== 'undefined') doJoin(joinParam);
     else netError('peerjs.min.js missing');

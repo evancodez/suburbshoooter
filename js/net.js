@@ -380,11 +380,6 @@ G.net = (function () {
     } else toHost({ t: 'name', name });
   };
   N.link = function () {
-    if (N.lanMode) {
-      const ip = N.lanInfo ? N.lanInfo.ip : location.hostname;
-      const port = N.lanInfo ? N.lanInfo.port : location.port;
-      return 'http://' + ip + ':' + port + '/?join=lan';
-    }
     return location.origin + location.pathname + '?join=' + N.code;
   };
 
@@ -406,118 +401,6 @@ G.net = (function () {
       }
     });
   }
-
-  // ---------- LAN mode (same-wifi play through serve.py's relay) ----------
-  // The local python server is a mailbox: we poll our inbox and post batches
-  // addressed to the host / a player. Fake conn objects speak the same
-  // interface as PeerJS DataConnections, so lobby + match code is unchanged.
-  let lanActive = false, lanTimer = null, lanBusy = false;
-  const lanOut = new Map(); // to -> [msgs]
-  function lanQueue(to, msg) {
-    if (!lanOut.has(to)) lanOut.set(to, []);
-    lanOut.get(to).push(msg);
-  }
-  function LanConn(pid, to) {
-    const c = { _pid: pid, _name: '', open: true, _h: {} };
-    c.on = (ev, cb) => { c._h[ev] = cb; };
-    c.send = (msg) => lanQueue(to, msg);
-    c._data = (msg) => { if (c._h.data) c._h.data(msg); };
-    c._close = () => { if (!c.open) return; c.open = false; if (c._h.close) c._h.close(); };
-    return c;
-  }
-  function lanStop() {
-    lanActive = false;
-    if (lanTimer) { clearInterval(lanTimer); lanTimer = null; }
-    lanOut.clear();
-  }
-  async function lanTick() {
-    if (!lanActive || lanBusy) return;
-    lanBusy = true;
-    try {
-      const jobs = [];
-      for (const [to, msgs] of lanOut) {
-        jobs.push(fetch('/lan/send', { method: 'POST', body: JSON.stringify({ pid: N.myId, to, msgs }) }));
-      }
-      lanOut.clear();
-      if (jobs.length) await Promise.all(jobs);
-      const r = await (await fetch('/lan/poll?pid=' + encodeURIComponent(N.myId))).json();
-      if (!lanActive) return;
-      if (r.gone) { lanHostGone(); return; }
-      for (const m of (r.msgs || [])) lanRoute(m);
-    } catch (e) { /* transient LAN hiccup: next tick retries */ }
-    finally { lanBusy = false; }
-  }
-  function lanHostGone() {
-    lanStop();
-    if (!N.isHost) {
-      N.active = false;
-      if (N.onClosed) N.onClosed();
-    }
-  }
-  function lanRoute(m) {
-    if (N.isHost) {
-      if (m.t === '__join') {
-        const conn = LanConn(m.pid, m.pid);
-        conns.push(conn);
-        wireConn(conn);
-        return;
-      }
-      if (m.t === '__left') {
-        const conn = conns.find(c => c._pid === m.pid);
-        if (conn) conn._close();
-        return;
-      }
-      const from = m.__from;
-      delete m.__from;
-      const conn = conns.find(c => c._pid === from);
-      if (conn) conn._data(m);
-    } else {
-      if (m.t === '__hostgone') { lanHostGone(); return; }
-      if (hostConn) hostConn._data(m);
-    }
-  }
-  N.lanMode = false;
-  N.lanInfo = null;
-  N.hostLan = function (name, cb, errCb) {
-    N.leave();
-    N.myName = name;
-    N.myId = 'lan-' + shortCode();
-    fetch('/lan/host', { method: 'POST', body: JSON.stringify({ pid: N.myId }) })
-      .then(r => r.json().then(d => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { errCb && errCb(d.err || 'could not start a wifi game'); return; }
-        N.lanMode = true;
-        N.lanInfo = d;
-        N.isHost = true;
-        N.code = 'WIFI';
-        guestN = 0;
-        N.lobby = { players: [{ id: N.myId, name, team: 0, host: true }], cfg: { mode: 'tdm', botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10, map: 'suburbs' } };
-        N.myTeam = 0;
-        lanActive = true;
-        lanTimer = setInterval(lanTick, 60);
-        cb && cb();
-      })
-      .catch(() => errCb && errCb('no local server — wifi games need the game run via  python3 serve.py'));
-  };
-  N.joinLan = function (name, cb, errCb) {
-    N.leave();
-    N.myName = name;
-    N.myId = 'lan-' + shortCode();
-    fetch('/lan/join', { method: 'POST', body: JSON.stringify({ pid: N.myId }) })
-      .then(r => r.json().then(d => ({ ok: r.ok, d })))
-      .then(({ ok, d }) => {
-        if (!ok) { errCb && errCb(d.err || 'could not join'); return; }
-        N.lanMode = true;
-        N.code = 'WIFI';
-        hostConn = LanConn('host', 'host');
-        wireConn(hostConn);
-        lanActive = true;
-        lanTimer = setInterval(lanTick, 60);
-        hostConn.send({ t: 'hello', name: N.myName, pid: N.myId });
-        cb && cb();
-      })
-      .catch(() => errCb && errCb('no local server — open the address the host\'s computer printed'));
-  };
 
   function friendlyErr(e) {
     const t = e && e.type;
@@ -617,8 +500,6 @@ G.net = (function () {
   };
 
   N.leave = function () {
-    lanStop();
-    N.lanMode = false;
     try { if (peer) peer.destroy(); } catch (e) {}
     peer = null; conns = []; hostConn = null;
     for (const rp of [...N.remoteList]) removeRemote(rp.id);
