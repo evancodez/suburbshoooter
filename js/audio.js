@@ -163,6 +163,7 @@ G.audio = (function () {
   };
   A.whizz = function () { playBuf(noiseBuf, { gain: 0.16, dur: 0.14, hp: 1800, rate: U.rand(1.4, 1.9) }); };
   A.thud = function (pos) { tone('sine', 90, 40, 0.08, 0.18, pos, 40); };
+  A.boing = function (pos) { tone('sine', 140, 420, 0.22, 0.4, pos, 60); tone('square', 70, 210, 0.16, 0.1, pos, 60); };
   A.bounce = function (pos) { tone('square', 500, 220, 0.05, 0.1, pos, 40); };
   A.uav = function () { tone('sawtooth', 300, 600, 0.35, 0.14); setTimeout(() => tone('sawtooth', 600, 900, 0.3, 0.12), 300); };
   A.airstrikeCall = function () { tone('square', 880, 880, 0.1, 0.12); setTimeout(() => tone('square', 880, 880, 0.1, 0.12), 200); };

@@ -967,5 +967,39 @@ window.T = (function () {
     return tex(c);
   };
 
+  T.bigSign = function (text, bg, fg) { // painted park/ride signboard
+    const { c, x } = cnv(256, 64);
+    x.fillStyle = bg || '#d94a4a'; x.fillRect(0, 0, 256, 64);
+    x.fillStyle = fg || '#fff8e8';
+    x.font = 'bold 34px "Comic Sans MS", cursive'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(text, 128, 34);
+    border(x, 256, 64, 5, 'rgba(0,0,0,0.8)');
+    return tex(c);
+  };
+  T.heraldry = function (bg) { // banner cloth: chevron + roundel on a field
+    const { c, x } = cnv(64, 96);
+    x.fillStyle = bg || '#a82a2a'; x.fillRect(0, 0, 64, 96);
+    x.fillStyle = '#e8c55a';
+    x.beginPath(); x.moveTo(5, 34); x.lineTo(32, 52); x.lineTo(59, 34);
+    x.lineTo(59, 46); x.lineTo(32, 64); x.lineTo(5, 46); x.closePath(); x.fill();
+    x.beginPath(); x.arc(32, 20, 8, 0, Math.PI * 2); x.fill();
+    border(x, 64, 96, 4, 'rgba(0,0,0,0.75)');
+    return tex(c);
+  };
+  T.mascot = function () { // MR. WHIRLY, beloved and doomed
+    const { c, x } = cnv(96, 128);
+    x.fillStyle = '#f2a03a'; x.fillRect(0, 0, 96, 128);
+    x.fillStyle = '#ffd9a0';
+    x.beginPath(); x.ellipse(48, 92, 26, 28, 0, 0, Math.PI * 2); x.fill(); // belly
+    x.fillStyle = '#2a2a2e';
+    x.beginPath(); x.arc(30, 28, 6, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.arc(66, 28, 6, 0, Math.PI * 2); x.fill();
+    x.lineWidth = 4; x.strokeStyle = '#2a2a2e';
+    x.beginPath(); x.arc(48, 36, 15, 0.2 * Math.PI, 0.8 * Math.PI); x.stroke(); // smile
+    x.fillStyle = '#e8823a'; x.beginPath(); x.arc(48, 36, 5, 0, Math.PI * 2); x.fill();
+    border(x, 96, 128, 5, 'rgba(0,0,0,0.8)');
+    return tex(c);
+  };
+
   return T;
 })();

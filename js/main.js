@@ -324,6 +324,12 @@
       G.fx.shake(0.35, 0.25);
     }
     if (!player.onGround && !grabbing) {
+      // stunt flights get gentle air drag: you settle onto the deck you aimed
+      // at instead of sailing straight over its far edge
+      if (player.padT > 0) {
+        const kk = Math.pow(0.45, dt);
+        player.vel.x *= kk; player.vel.z *= kk;
+      }
       player.vel.y -= 14.5 * dt;
       player.pos.y += player.vel.y * dt;
       if (player.pos.y <= floorY && player.vel.y <= 0) {
@@ -337,10 +343,25 @@
         player.onGround = false; // walked off ledge
       } else player.pos.y = floorY;
     }
+    // stunt trampolines: touch down on one and UP you go (crouch to absorb)
+    if (player.onGround && !grabbing && !player.crouching) {
+      const pad = G.world.padAt && G.world.padAt(player.pos.x, player.pos.z, player.pos.y);
+      if (pad) {
+        player.vel.y = pad.power;
+        player.onGround = false;
+        player.slideT = -1;
+        player.padT = 1.2; // stunt launch: ceilings don't apply on the way up
+        G.audio.boing(player.pos);
+        G.fx.shake(0.16, 0.14);
+        G.fx.dustLand(player.pos);
+      }
+    }
+    player.padT = Math.max(0, (player.padT || 0) - dt);
     // bonk: jumping under a floor/ceiling stops the jump instead of clipping.
     // NOT while on a ladder — climbing past an overhanging ledge would pin you
-    // headroom-below it forever (the ladder's own top cap limits the climb)
-    if (!grabbing && player.ladderCd <= 0.1) {
+    // headroom-below it forever. NOT while rising off a trampoline either: a
+    // stunt launch pops you up past deck edges so you land ON them, not under
+    if (!grabbing && player.ladderCd <= 0.1 && !(player.padT > 0 && player.vel.y > 0)) {
       const ceilY = G.world.ceilingAt(player.pos.x, player.pos.z, player.pos.y, 0.3);
       const headroom = player.crouching ? 1.35 : 1.88;
       if (ceilY > floorY + headroom && player.pos.y + headroom > ceilY) {
@@ -945,6 +966,13 @@
       wagon: 'Covered wagons', hay: 'Hay bales', cactus: 'Protected cacti', bell: 'Church bells',
       windmill: 'Windmill heads', trough: 'Water troughs', pew: 'Church pews', sign: 'Wanted posters',
       towertank: 'Water towers', chest: 'Gold chests', stone: 'Quarry stone', crate: 'Supply crates',
+      catapult: 'Siege engines', knight: 'Suits of armor', throne: 'Royal thrones',
+      chandelier: 'Chandeliers', pillar: 'Marble columns', statue: 'Ancestral statues',
+      banner: 'Royal banners', brazier: 'Braziers', feast: 'Feast tables', stall: 'Market stalls',
+      tent: 'War tents', dummy: 'Training dummies', rack: 'Weapon racks', tomb: 'Headstones',
+      mascot: 'Beloved mascots', coaster: 'Coaster cars', booth: 'Carnival games',
+      ticket: 'Ticket booths', bumper: 'Bumper cars', striker: 'High strikers',
+      dunk: 'Dunk tanks', snack: 'Snack stands', foam: 'Foam blocks', balloon: 'Balloons',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -955,6 +983,10 @@
       wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
       keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120, pew: 300, sign: 45,
       towertank: 9000, chest: 5000, stone: 400, crate: 45,
+      catapult: 4500, knight: 900, throne: 15000, chandelier: 3500, pillar: 1200, statue: 6000,
+      banner: 250, brazier: 400, feast: 900, stall: 350, tent: 300, dummy: 150, rack: 700, tomb: 500,
+      mascot: 15000, coaster: 22000, booth: 450, ticket: 800, bumper: 1200, striker: 900,
+      dunk: 700, snack: 350, foam: 8, balloon: 5,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
@@ -1083,6 +1115,13 @@
         x.fillRect(mx - w.cw * MMS / 2, mz - w.cw * MMS / 2, w.cw * MMS, Math.max(2, w.th * MMS));
       }
     }
+    // stunt trampolines: gold dots worth remembering
+    if (G.world.bouncePads) for (const p of G.world.bouncePads) {
+      const [mx, mz] = w2m((p.minx + p.maxx) / 2, (p.minz + p.maxz) / 2);
+      x.fillStyle = '#ffd23e';
+      x.strokeStyle = '#111'; x.lineWidth = 1.4;
+      x.beginPath(); x.arc(mx, mz, 3.6, 0, 7); x.fill(); x.stroke();
+    }
     // cars
     for (const car of G.world.cars) {
       x.fillStyle = car.exploded ? '#333' : '#555a60';
@@ -1105,7 +1144,7 @@
     x.clearRect(0, 0, S, S);
     x.save();
     x.beginPath(); x.arc(R, R, R - 2, 0, 7); x.clip();
-    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'city' ? '#2e3036' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
+    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'citadel' ? '#3f7a33' : G.world.mapId === 'funland' ? '#3f8f46' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);

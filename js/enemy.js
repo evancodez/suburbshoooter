@@ -587,11 +587,11 @@ G.botMgr = (function () {
 
     // vault in progress: airborne hop, skip everything else
     if (bot.vault) {
-      bot.vault.t += dt / 0.5;
+      bot.vault.t += dt / (bot.vault.dur || 0.5);
       const k = Math.min(bot.vault.t, 1);
       bp.x = U.lerp(bot.vault.fromX, bot.vault.toX, k);
       bp.z = U.lerp(bot.vault.fromZ, bot.vault.toZ, k);
-      bp.y = bot.vault.fromY + Math.sin(k * Math.PI) * 1.05;
+      bp.y = bot.vault.fromY + Math.sin(k * Math.PI) * (bot.vault.h || 1.05);
       bot.group.position.y = bp.y;
       if (k >= 1) {
         bot.vault = null;
@@ -983,6 +983,21 @@ G.botMgr = (function () {
       if (zce > zfl + 1.9 && bp.y + 1.9 > zce) bp.y = zce - 1.9;
     } else {
       bp.y = G.world.standHeightAt(bp.x, bp.z, bp.y);
+    }
+
+    // stepped onto a stunt trampoline: boing (a tall arc in the move direction)
+    if (!G.world.zeroG && !bot.vault && !bot.climb && G.world.padAt) {
+      const pad = G.world.padAt(bp.x, bp.z, bp.y);
+      if (pad) {
+        const l = bot.moveDir.length() || 1;
+        const fx2 = bot.moveDir.x / l, fz2 = bot.moveDir.z / l;
+        bot.vault = {
+          t: 0, fromX: bp.x, fromZ: bp.z, fromY: bp.y,
+          toX: bp.x + fx2 * 4.2, toZ: bp.z + fz2 * 4.2,
+          h: pad.power * 0.3, dur: 0.85,
+        };
+        G.audio.boing(bp);
+      }
     }
 
     // stuck: repath → try a different route → vault/bash as a last resort
