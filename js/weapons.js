@@ -8,8 +8,8 @@ G.arsenal = (function () {
           spread: 1.15, bloomPer: 0.62, bloomMax: 4.2, adsMul: 0.32, recoil: 1.35, chunkDmg: 15, reload: 1.9, pellets: 1,
           falloff: 95, falloffStart: 24, falloffFloor: 0.55 },
     sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.78, dmg: 13, headMul: 1.35, mag: 10, reserve: 40,
-          spread: 4.4, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.6, chunkDmg: 9, reload: 2.5, pellets: 8,
-          falloff: 30, falloffStart: 6, falloffFloor: 0.32 },
+          spread: 4.4, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.9, chunkDmg: 9, reload: 2.5, pellets: 8,
+          falloff: 34, falloffStart: 8.5, falloffFloor: 0.36 },
     sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.2, dmg: 88, headMul: 2.3, mag: 5, reserve: 25,
           spread: 5.5, bloomPer: 0, bloomMax: 6, adsMul: 0.012, recoil: 3.4, chunkDmg: 40, reload: 2.9, pellets: 1 },
     rl:  { name: 'HOA VIOLATION', kind: 'rl', auto: false, interval: 1.1, mag: 1, reserve: 5,
@@ -351,7 +351,8 @@ G.arsenal = (function () {
     }
     // fx + noise
     muzzleNode.getWorldPosition(tmpV);
-    G.fx.muzzle(tmpV, A.currentId === 'sg' ? 0.55 : 0.4);
+    G.fx.muzzle(tmpV, A.currentId === 'sg' ? 0.95 : 0.4);
+    if (A.currentId === 'sg') G.fx.shake(0.16, 0.1); // the boom you feel in your chest
     muzzleFlashT = 0.05;
     G.audio.shot(def.kind, null);
     G.botMgr.onNoise(G.player.pos, 48);

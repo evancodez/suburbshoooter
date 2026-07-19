@@ -748,7 +748,9 @@ G.botMgr = (function () {
       }
       case 'camp': {
         if (!bot.campSpot) {
-          let best = null, bestD = -1;
+          // -Infinity, not -1: koth flips distances negative (nearest-wins), and
+          // a -1 floor left best null there — a null campSpot crashed the match
+          let best = null, bestD = -Infinity;
           const anchor = tgtValid(bot) ? t.pos : { x: 0, z: 0 };
           const hill = G.game && G.game.mode === 'koth' && G.game.hillPos;
           for (let i = 0; i < 4; i++) {

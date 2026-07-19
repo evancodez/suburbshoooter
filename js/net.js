@@ -66,6 +66,38 @@ G.net = (function () {
       N.remoteList.splice(i, 1);
     }
   }
+
+  // ---------- corpses: the fallen stay where they fell (for a while) ----------
+  const corpses = [];
+  function spawnCorpse(rp) {
+    const c = rp.group.clone();
+    for (let i = c.children.length - 1; i >= 0; i--) {
+      if (c.children[i].isSprite) c.remove(c.children[i]); // no nametag, no marker
+    }
+    c.position.copy(rp.pos);
+    c.rotation.y = rp.yaw + Math.PI;
+    c.visible = true;
+    G.scene.add(c);
+    corpses.push({ g: c, t: 10, fallT: 0, axis: Math.random() < 0.5 ? 1 : -1 });
+  }
+  N.clearCorpses = function () {
+    for (const c of corpses) G.scene.remove(c.g);
+    corpses.length = 0;
+  };
+  function updateCorpses(dt) {
+    for (let i = corpses.length - 1; i >= 0; i--) {
+      const c = corpses[i];
+      if (c.fallT < 0.62) { // keel over, bot-style
+        c.fallT += dt;
+        const t = Math.min(c.fallT / 0.5, 1);
+        c.g.rotation.x = (1 - Math.pow(1 - t, 2.4)) * (Math.PI / 2) * 0.96 * c.axis;
+        if (t >= 1 && c.fallT - dt < 0.5) G.fx.dustLand(c.g.position);
+      }
+      c.t -= dt;
+      if (c.t < 1) c.g.position.y -= dt * 1.6; // sink away at the end
+      if (c.t <= 0) { G.scene.remove(c.g); corpses.splice(i, 1); }
+    }
+  }
   function remoteById(id) { return N.remoteList.find(r => r.id === id); }
   N.remoteById = remoteById;
 
@@ -255,7 +287,9 @@ G.net = (function () {
         if (rp) {
           rp.netX = msg.x; rp.netY = msg.y; rp.netZ = msg.z;
           rp.netYaw = msg.yw; rp.netPitch = msg.pt; rp.netSpd = msg.sp;
+          const wasAlive = rp.alive;
           rp.alive = msg.al === 1;
+          if (wasAlive && !rp.alive) spawnCorpse(rp); // leave a body, not a vanishing act
           rp.weapon = msg.w;
         }
         if (N.isHost) { msg.id = id; bc(msg, fromConn); }
@@ -635,6 +669,7 @@ G.net = (function () {
     N.lanMode = false;
     try { if (peer) peer.destroy(); } catch (e) {}
     peer = null; conns = []; hostConn = null;
+    N.clearCorpses();
     for (const rp of [...N.remoteList]) removeRemote(rp.id);
     N.active = false; N.isHost = false; N.lobby = null; N.code = '';
     N.teamOverrides = null;
@@ -693,6 +728,7 @@ G.net = (function () {
 
   // ---------- per-frame ----------
   N.update = function (dt) {
+    updateCorpses(dt);
     // interpolate remote players
     for (const rp of N.remoteList) {
       rp.lastShotT += dt;

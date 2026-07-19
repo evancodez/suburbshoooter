@@ -967,15 +967,6 @@ window.T = (function () {
     return tex(c);
   };
 
-  T.bigSign = function (text, bg, fg) { // painted park/ride signboard
-    const { c, x } = cnv(256, 64);
-    x.fillStyle = bg || '#d94a4a'; x.fillRect(0, 0, 256, 64);
-    x.fillStyle = fg || '#fff8e8';
-    x.font = 'bold 34px "Comic Sans MS", cursive'; x.textAlign = 'center'; x.textBaseline = 'middle';
-    x.fillText(text, 128, 34);
-    border(x, 256, 64, 5, 'rgba(0,0,0,0.8)');
-    return tex(c);
-  };
   T.heraldry = function (bg) { // banner cloth: chevron + roundel on a field
     const { c, x } = cnv(64, 96);
     x.fillStyle = bg || '#a82a2a'; x.fillRect(0, 0, 64, 96);
@@ -986,18 +977,127 @@ window.T = (function () {
     border(x, 64, 96, 4, 'rgba(0,0,0,0.75)');
     return tex(c);
   };
-  T.mascot = function () { // MR. WHIRLY, beloved and doomed
+  T.castlebrick = function () { // great ashlar blocks, hand-cut and a little tired
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#a8a49b'; x.fillRect(0, 0, 128, 128);
+    const rows = 4, bh = 128 / rows;
+    for (let r = 0; r < rows; r++) {
+      const off = (r % 2) * 32;
+      for (let b = -1; b < 3; b++) {
+        const bx = b * 64 + off, by = r * bh;
+        const g = 158 + ((r * 7 + b * 13) % 5) * 8 - 16;
+        x.fillStyle = `rgb(${g},${g - 4},${g - 12})`;
+        x.fillRect(bx + 2, by + 2, 60, bh - 4);
+        x.strokeStyle = 'rgba(58,52,44,0.85)'; x.lineWidth = 3; x.lineCap = 'round';
+        wob(x, bx + 2, by + 2, bx + 62, by + 2, 4, 1.4);
+        wob(x, bx + 2, by + 2, bx + 2, by + bh - 2, 3, 1.4);
+      }
+    }
+    x.strokeStyle = 'rgba(58,52,44,0.5)';
+    wob(x, 20, 40, 34, 58, 3, 2); // a crack
+    return tex(c, [1, 1]);
+  };
+  T.bookwall = function () { // shelves crammed with book spines
+    const { c, x } = cnv(128, 128);
+    x.fillStyle = '#4a3020'; x.fillRect(0, 0, 128, 128);
+    const spineCols = ['#8f3a2e', '#2e5a8f', '#3f7a3f', '#b08a2e', '#6a3a7a', '#a85a30', '#586878'];
+    for (let s = 0; s < 3; s++) {
+      const sy = s * 42 + 4;
+      let bx = 3;
+      let i = 0;
+      while (bx < 122) {
+        const w = 7 + ((s * 5 + i * 3) % 4) * 2;
+        const h = 30 + ((i * 7 + s * 11) % 3) * 3;
+        x.fillStyle = spineCols[(i + s * 2) % spineCols.length];
+        x.fillRect(bx, sy + 36 - h, w, h);
+        x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = 2;
+        x.strokeRect(bx, sy + 36 - h, w, h);
+        bx += w + 1; i++;
+      }
+      x.fillStyle = '#6a4a28'; x.fillRect(0, sy + 36, 128, 6); // the shelf board
+    }
+    border(x, 128, 128, 4, 'rgba(30,20,12,0.9)');
+    return tex(c, [1, 1]);
+  };
+  T.tapestry = function (bg) { // woven wall hanging: crown over crossed swords
     const { c, x } = cnv(96, 128);
-    x.fillStyle = '#f2a03a'; x.fillRect(0, 0, 96, 128);
-    x.fillStyle = '#ffd9a0';
-    x.beginPath(); x.ellipse(48, 92, 26, 28, 0, 0, Math.PI * 2); x.fill(); // belly
-    x.fillStyle = '#2a2a2e';
-    x.beginPath(); x.arc(30, 28, 6, 0, Math.PI * 2); x.fill();
-    x.beginPath(); x.arc(66, 28, 6, 0, Math.PI * 2); x.fill();
-    x.lineWidth = 4; x.strokeStyle = '#2a2a2e';
-    x.beginPath(); x.arc(48, 36, 15, 0.2 * Math.PI, 0.8 * Math.PI); x.stroke(); // smile
-    x.fillStyle = '#e8823a'; x.beginPath(); x.arc(48, 36, 5, 0, Math.PI * 2); x.fill();
-    border(x, 96, 128, 5, 'rgba(0,0,0,0.8)');
+    x.fillStyle = bg || '#6a1f26'; x.fillRect(0, 0, 96, 128);
+    x.strokeStyle = '#d8b23a'; x.lineWidth = 4;
+    x.strokeRect(7, 7, 82, 106);
+    x.lineCap = 'round';
+    x.beginPath(); x.moveTo(30, 78); x.lineTo(66, 42); x.stroke();
+    x.beginPath(); x.moveTo(66, 78); x.lineTo(30, 42); x.stroke();
+    x.fillStyle = '#d8b23a';
+    x.beginPath(); x.moveTo(32, 36); x.lineTo(38, 24); x.lineTo(48, 34); x.lineTo(58, 24);
+    x.lineTo(64, 36); x.closePath(); x.fill();
+    x.fillRect(30, 36, 36, 6);
+    for (let f = 0; f < 12; f++) { // fringe
+      x.fillStyle = f % 2 ? '#d8b23a' : '#b0902e';
+      x.fillRect(4 + f * 7.4, 116, 5, 10);
+    }
+    return tex(c);
+  };
+  T.stainedTall = function () { // lancet window, jewel glass
+    const { c, x } = cnv(64, 128);
+    const cols = ['#c33a3a', '#3a62c3', '#c3a23a', '#3aa25a', '#8a3ac3', '#3aabc3'];
+    for (let r = 0; r < 8; r++)
+      for (let cc = 0; cc < 4; cc++) {
+        x.fillStyle = cols[(r * 3 + cc * 5) % 6];
+        x.fillRect(cc * 16, r * 16, 16, 16);
+      }
+    x.strokeStyle = '#241c14'; x.lineWidth = 4;
+    for (let cc = 1; cc < 4; cc++) { x.beginPath(); x.moveTo(cc * 16, 0); x.lineTo(cc * 16, 128); x.stroke(); }
+    for (let r = 1; r < 8; r++) { x.beginPath(); x.moveTo(0, r * 16); x.lineTo(64, r * 16); x.stroke(); }
+    // pointed arch tracery
+    x.strokeStyle = '#241c14'; x.lineWidth = 7;
+    x.beginPath(); x.moveTo(4, 30); x.quadraticCurveTo(32, -14, 60, 30); x.stroke();
+    border(x, 64, 128, 6, 'rgba(28,22,16,0.95)');
+    return tex(c);
+  };
+  T.stainedRose = function () { // the rose window
+    const { c, x } = cnv(128, 128);
+    const cols = ['#c33a3a', '#3a62c3', '#c3a23a', '#3aa25a', '#8a3ac3', '#3aabc3'];
+    x.fillStyle = '#241c14'; x.fillRect(0, 0, 128, 128);
+    for (let w = 0; w < 12; w++) {
+      x.fillStyle = cols[w % 6];
+      x.beginPath(); x.moveTo(64, 64);
+      x.arc(64, 64, 58, (w / 12) * Math.PI * 2, ((w + 1) / 12) * Math.PI * 2);
+      x.closePath(); x.fill();
+      x.strokeStyle = '#241c14'; x.lineWidth = 5; x.stroke();
+    }
+    x.fillStyle = '#e8d060';
+    x.beginPath(); x.arc(64, 64, 16, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#241c14'; x.lineWidth = 5;
+    x.beginPath(); x.arc(64, 64, 16, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.arc(64, 64, 58, 0, Math.PI * 2); x.stroke();
+    return tex(c);
+  };
+  T.rug = function () { // long ceremonial runner
+    const { c, x } = cnv(64, 128);
+    x.fillStyle = '#7a1f28'; x.fillRect(0, 0, 64, 128);
+    x.fillStyle = '#d8b23a';
+    x.fillRect(4, 0, 4, 128); x.fillRect(56, 0, 4, 128);
+    for (let d = 0; d < 4; d++) {
+      const dy = 16 + d * 32;
+      x.beginPath(); x.moveTo(32, dy - 9); x.lineTo(41, dy); x.lineTo(32, dy + 9); x.lineTo(23, dy); x.closePath();
+      x.fill();
+    }
+    return tex(c, [1, 4]);
+  };
+  T.flame = function () { // torch flame sprite (transparent)
+    const { c, x } = cnv(48, 64);
+    x.clearRect(0, 0, 48, 64);
+    const tongue = (sx, sy, w, h, col) => {
+      x.fillStyle = col;
+      x.beginPath();
+      x.moveTo(sx, sy);
+      x.quadraticCurveTo(sx - w, sy - h * 0.45, sx, sy - h);
+      x.quadraticCurveTo(sx + w, sy - h * 0.45, sx, sy);
+      x.fill();
+    };
+    tongue(24, 60, 17, 52, 'rgba(255,120,30,0.9)');
+    tongue(24, 58, 11, 38, 'rgba(255,190,60,0.95)');
+    tongue(24, 56, 6, 22, 'rgba(255,240,170,0.95)');
     return tex(c);
   };
 

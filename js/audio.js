@@ -109,9 +109,11 @@ G.audio = (function () {
     if (kind === 'ar') {
       playBuf(noiseBuf, { pos, gain: 0.55, dur: 0.09, lp: 9000, rate: U.rand(0.9, 1.1) });
       tone('sine', 150, 45, 0.1, 0.5, pos);
-    } else if (kind === 'sg') {
-      playBuf(noiseBuf, { pos, gain: 0.85, dur: 0.22, lp: 5200, rate: U.rand(0.75, 0.85) });
-      tone('sine', 110, 32, 0.2, 0.7, pos);
+    } else if (kind === 'sg') { // a proper 12-gauge BOOM: crack + body + sub thump
+      playBuf(noiseBuf, { pos, gain: 1.05, dur: 0.3, lp: 4200, rate: U.rand(0.62, 0.7) });
+      playBuf(noiseBuf, { pos, gain: 0.45, dur: 0.06, hp: 1500, rate: 1.3 });
+      tone('sine', 100, 30, 0.3, 0.85, pos);
+      tone('sine', 58, 24, 0.42, 0.75, pos);
     } else if (kind === 'sr') {
       playBuf(noiseBuf, { pos, gain: 0.9, dur: 0.28, lp: 7500, rate: 0.72 });
       tone('sine', 130, 28, 0.26, 0.75, pos);

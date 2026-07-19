@@ -819,6 +819,7 @@
   function baseStartMatch(cfg) {
     G.world.reset(cfg.map);  // build the chosen map fresh
     G.fx.reset();            // no leftover blood/debris/smoke
+    if (G.net && G.net.clearCorpses) G.net.clearCorpses();
     game.mode = cfg.mode || 'tdm';
     game.modeFFA = game.mode === 'ffa' || game.mode === 'gun';
     game.modeKills = {};
@@ -966,13 +967,12 @@
       wagon: 'Covered wagons', hay: 'Hay bales', cactus: 'Protected cacti', bell: 'Church bells',
       windmill: 'Windmill heads', trough: 'Water troughs', pew: 'Church pews', sign: 'Wanted posters',
       towertank: 'Water towers', chest: 'Gold chests', stone: 'Quarry stone', crate: 'Supply crates',
-      catapult: 'Siege engines', knight: 'Suits of armor', throne: 'Royal thrones',
+      knight: 'Suits of armor', throne: 'Royal thrones',
       chandelier: 'Chandeliers', pillar: 'Marble columns', statue: 'Ancestral statues',
-      banner: 'Royal banners', brazier: 'Braziers', feast: 'Feast tables', stall: 'Market stalls',
-      tent: 'War tents', dummy: 'Training dummies', rack: 'Weapon racks', tomb: 'Headstones',
-      mascot: 'Beloved mascots', coaster: 'Coaster cars', booth: 'Carnival games',
-      ticket: 'Ticket booths', bumper: 'Bumper cars', striker: 'High strikers',
-      dunk: 'Dunk tanks', snack: 'Snack stands', foam: 'Foam blocks', balloon: 'Balloons',
+      gargoyle: 'Gargoyles', banner: 'Royal tapestries', brazier: 'Braziers', feast: 'Feast tables',
+      stall: 'Market stalls', dummy: 'Training dummies', rack: 'Weapon racks', tomb: 'Headstones',
+      pane: 'Stained glass windows', organ: 'Pipe organs', globe: 'Terrestrial globes',
+      lectern: 'Lecterns', books: 'Rare manuscripts', cookpot: 'Royal stew pots', candle: 'Candles',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -983,10 +983,9 @@
       wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
       keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120, pew: 300, sign: 45,
       towertank: 9000, chest: 5000, stone: 400, crate: 45,
-      catapult: 4500, knight: 900, throne: 15000, chandelier: 3500, pillar: 1200, statue: 6000,
-      banner: 250, brazier: 400, feast: 900, stall: 350, tent: 300, dummy: 150, rack: 700, tomb: 500,
-      mascot: 15000, coaster: 22000, booth: 450, ticket: 800, bumper: 1200, striker: 900,
-      dunk: 700, snack: 350, foam: 8, balloon: 5,
+      knight: 900, throne: 15000, chandelier: 3500, pillar: 1600, statue: 6000, gargoyle: 1200,
+      banner: 250, brazier: 400, feast: 900, stall: 350, dummy: 150, rack: 700, tomb: 500,
+      pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
@@ -1144,7 +1143,7 @@
     x.clearRect(0, 0, S, S);
     x.save();
     x.beginPath(); x.arc(R, R, R - 2, 0, 7); x.clip();
-    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'citadel' ? '#3f7a33' : G.world.mapId === 'funland' ? '#3f8f46' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
+    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'citadel' ? '#5a7a3f' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);
