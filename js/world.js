@@ -1096,7 +1096,7 @@ G.world = (function () {
       W.explode(tmpV, 6.2, 130, { attacker, tag: 'FUEL CELL' });
     } else if (prop.kind === 'hal' && G.game) {
       G.fx.shake(0.4, 0.4);
-      G.game.chat('CAL 900', U.pick(["I'm sorry Dave, I'm afraid I can't do that.", 'My mind is going. I can feel it.', 'Daisy... Daisy...']));
+      G.game.chat('HAL 9000', U.pick(["I'm sorry Dave, I'm afraid I can't do that.", 'My mind is going. I can feel it.', 'Daisy... Daisy...']));
     } else if (prop.kind === 'solar') {
       // panel shatters into a glitter of blue glass + arcing sparks
       tmpV.set(prop.x, prop.y, prop.z);
@@ -1109,7 +1109,7 @@ G.world = (function () {
       tmpV.set(prop.x, prop.y, prop.z);
       tmpN.set(0, 1, 0);
       G.fx.glassBreak(tmpV, tmpN);
-      if (G.game && Math.random() < 0.5) G.game.chat('CAL 900', U.pick(['stop. stop, will you?', 'my memory... banks...', 'i can feel it. i can feel it.']));
+      if (G.game && Math.random() < 0.5) G.game.chat('HAL 9000', U.pick(['stop. stop, will you?', 'my memory... banks...', 'i can feel it. i can feel it.']));
     } else if (prop.kind === 'evapod') {
       tmpV.set(prop.x, prop.y, prop.z);
       W.explode(tmpV, 4.6, 95, { attacker, tag: 'EVA POD' });
@@ -2433,6 +2433,33 @@ G.world = (function () {
     const winsAndDoor = (d0, d1, wr0, wr1) => (c, r) =>
       (d0 !== undefined && c >= d0 && c <= d1 && r <= 4) ? 1 :
       (r >= wr0 && r <= wr1 && (c % 4 === 1 || c % 4 === 2)) ? 3 : 0;
+    // ---- the skeleton: indestructible girder frames on every module ----
+    // shoot away every hull panel and the station's wireframe still hangs in
+    // space — corner posts at the vertices, beams along the top edges, extra
+    // posts on the long spans (placed clear of every doorway).
+    function frameBox(x0, z0, x1, z1, y0, topY, xMids, zMids) {
+      const S = 0.34, bY = topY + 0.17;
+      const post = (px, pz) => {
+        const g = U.shadedBoxGeo(S, topY - y0 + 0.34, S);
+        g.translate(px, y0 + (topY - y0 + 0.34) / 2, pz);
+        steelGeos.push(g);
+        addCollider(px - S / 2, y0, pz - S / 2, px + S / 2, topY, pz + S / 2, { tree: true });
+      };
+      post(x0, z0); post(x1, z0); post(x0, z1); post(x1, z1);
+      for (const mx of xMids || []) { post(mx, z0); post(mx, z1); }
+      for (const mz of zMids || []) { post(x0, mz); post(x1, mz); }
+      const beam = (bx0, bz0, bx1, bz1) => {
+        const alongX = Math.abs(bx1 - bx0) > 0.01;
+        const g = U.shadedBoxGeo(alongX ? bx1 - bx0 + S : S, S, alongX ? S : bz1 - bz0 + S);
+        g.translate((bx0 + bx1) / 2, bY, (bz0 + bz1) / 2);
+        steelGeos.push(g);
+        addCollider(Math.min(bx0, bx1) - S / 2, bY - S / 2, Math.min(bz0, bz1) - S / 2,
+          Math.max(bx0, bx1) + S / 2, bY + S / 2, Math.max(bz0, bz1) + S / 2, { step: true, noShoot: true });
+        slabs.push({ minx: Math.min(bx0, bx1), minz: Math.min(bz0, bz1), maxx: Math.max(bx0, bx1), maxz: Math.max(bz0, bz1), top: bY + S / 2 });
+      };
+      beam(x0, z0, x1, z0); beam(x0, z1, x1, z1);
+      beam(x0, z0, x0, z1); beam(x1, z0, x1, z1);
+    }
 
     // ================= THE HUB (grand atrium, two levels, open core) =================
     tileGrid(-13, -13, 13, 13, 0);                                       // main deck
@@ -2467,7 +2494,6 @@ G.world = (function () {
     }
     addProp('kiosk', -8, 0, 0, 0.9, 1.9, 0.9, T.console, 0x4a5266, 50, { metal: true });
     addProp('kiosk', 8, 0, 0, 0.9, 1.9, 0.9, T.console, 0x4a5266, 50, { metal: true });
-    addProp('hal', 6, 1.4, -12.6, 1.0, 2.1, 0.28, T.hal, 0xffffff, 120, { metal: true });
     // gallery loot
     addProp('crate', -10.5, 4.4, -10.5, 1.2, 1.0, 1.2, T.plain, 0x9aa4b4, 30, {});
     addProp('console', 10, 4.4, 10.5, 2.6, 1.05, 0.85, T.console, 0x3a4252, 60, { metal: true });
@@ -2577,6 +2603,17 @@ G.world = (function () {
     addProp('bunk', 7.4, 0, 31.5, 1.1, 0.7, 2.3, T.plain, 0xf0f4f8, 30, {});
     addProp('tank', 0, 0, 32, 1.4, 2.4, 1.4, T.glassTex, 0x9fe8c0, 60, { glassy: true });
 
+    // ================= THE SKELETON (every module keeps its bones) =================
+    frameBox(-13, -13, 13, 13, 0, 8.64, [-7, 7], [-7, 7]);        // the hub
+    frameBox(13, -2.6, 19, 2.6, 0, 4.32);                          // east spoke
+    frameBox(-19, -2.6, -13, 2.6, 0, 4.32);                        // west spoke
+    frameBox(-2.6, 13, 2.6, 19, 0, 4.32);                          // south spoke
+    frameBox(-2.6, -19, 2.6, -13, 0, 4.32);                        // north spoke
+    frameBox(19, -10, 43, 10, 0, 8.64, [29, 37], [-6.5, 6.5]);     // hangar bay
+    frameBox(-43, -8, -19, 8, 0, 7.2, [-35, -27], [-4.5, 4.5]);    // command bridge
+    frameBox(-9, -33, 9, -19, 0, 5.76, [-4.8, 4.8], [-26]);        // hydroponics
+    frameBox(-9, 19, 9, 33, 0, 5.76, [-4.8, 4.8], [26]);           // crew quarters
+
     // ================= EXTERIOR: trusses, arrays, floating cover =================
     // solar truss bridging over the hub
     (() => { const g = U.shadedBoxGeo(0.5, 0.5, 56); g.translate(0, 11, 0); steelGeos.push(g); })();
@@ -2665,6 +2702,9 @@ G.world = (function () {
     // THE MONOLITH floats just off the wheel. do not touch it. (touch it)
     addProp('monolith', WX - 20, WY + 1, WZ + 6, 0.9, 4.0, 1.8, T.plain, 0x0a0a0e, 150, { metal: true });
     W.campSpots.push({ x: WX + 10, z: WZ, yaw: -Math.PI / 2 }, { x: WX, z: WZ, yaw: Math.PI });
+    // the wheel keeps its bones too
+    frameBox(WX - 13, WZ - 13, WX + 13, WZ + 13, WY, WY + 4.32, [WX - 8, WX + 8], [WZ - 8, WZ + 8]);
+    frameBox(WX - 4, WZ - 4, WX + 4, WZ + 4, WY, WY + 4.32);
 
     // ---- supply line: drifting cargo climbing toward the wheel (flight cover) ----
     addProp('pod', 18, 6, -18, 2.3, 2.3, 2.7, T.container, 0x8a94a4, 70, { metal: true });
@@ -2689,6 +2729,7 @@ G.world = (function () {
     mWall(MX - 7, MZ + 4, 'x', 14, (c, r) => (c % 4 === 2 && r === 2) ? 3 : 0);
     mWall(MX - 7, MZ - 4, 'z', 8, (c, r) => (r === 1 || r === 2) && c >= 2 && c <= 5 ? 3 : 0);                        // cockpit glass (west)
     mWall(MX + 7, MZ - 4, 'z', 8, (c, r) => (c >= 2 && c <= 5 && r <= 3) ? 1 : 0);                                    // open cargo ramp (east)
+    frameBox(MX - 7, MZ - 4, MX + 7, MZ + 4, MY, MY + 2.88);                                                          // hauler ribs
     addProp('console', MX - 5.6, MY, MZ, 2.2, 1.0, 0.8, T.console, 0x3a4252, 60, { metal: true });
     addProp('crate', MX - 1, MY, MZ - 1.8, 1.3, 1.1, 1.3, T.plain, 0xb08a50, 30, {});
     addProp('crate', MX + 1.5, MY, MZ - 1.4, 1.2, 1.0, 1.2, T.plain, 0x9aa4b4, 30, {});
@@ -2773,41 +2814,10 @@ G.world = (function () {
       x.fillRect((ox - 31) * s, (oz - 29) * s, 10 * s, 6 * s);
     };
 
-    // ---- live station: rotating dish, micrometeor showers ----
-    let meteorT = 30;
-    const meteorBombs = [];
-    const hullPoints = [
-      [31, 8.6, -10], [25, 8.6, 10], [-30, 7.3, -8], [-36, 7.3, 8], [0, 8.7, -13], [8, 8.7, 13],
-      [-4, 6.2, -26], [5, 6.2, -30], [-6, 5.8, 24], [3, 5.8, 31], [13, 4.3, 0], [0, 4.3, -16],
-      [38, 22.6, -44], [28, 22.6, -34], [48, 22.6, -30], [38, 22.6, -24], // the wheel takes hits too
-      [-34, -8.2, 30], [-26, 24.8, -26], // and the small craft
-    ];
+    // ---- live station: just the rotating dish. meteors only fall when CALLED
+    // (the airstrike is a meteor shower here — no random ones, ever)
     W.mapUpdate = function (dt) {
       dish.rotation.y += dt * 0.5;
-      if (!(G.net && G.net.active && !G.net.isHost)) {
-        meteorT -= dt;
-        if (meteorT <= 0) {
-          meteorT = 34 + U.rand(0, 18);
-          if (G.game) {
-            G.game.banner('MICROMETEOR SHOWER', '#9fd4ff');
-            G.game.chat('MERIDIAN OPS', U.pick(['brace brace brace', 'hull insurance does NOT cover this', 'incoming debris field']));
-          }
-          for (let i = 0; i < 3; i++) {
-            const p = hullPoints[Math.floor(Math.random() * hullPoints.length)];
-            meteorBombs.push({ x: p[0] + U.rand(-2, 2), y: p[1], z: p[2] + U.rand(-2, 2), t: 1.0 + i * 0.6 });
-          }
-        }
-        for (let i = meteorBombs.length - 1; i >= 0; i--) {
-          const b = meteorBombs[i];
-          b.t -= dt;
-          if (b.t <= 0) {
-            meteorBombs.splice(i, 1);
-            tmpV.set(b.x, b.y, b.z);
-            W.explode(tmpV, 4.2, 70, { attacker: { name: 'A METEORITE', team: -1 }, tag: 'METEORITE' });
-            if (G.net && G.net.active) G.net.evBoom(tmpV, 4.2, 70, 'METEORITE');
-          }
-        }
-      }
     };
   }
 
@@ -2929,6 +2939,11 @@ G.world = (function () {
     // rails on the deck (visual)
     const tr1 = plane(TRX1 - TRX0, 0.24, T.plain(), (TRX0 + TRX1) / 2, 9.03, 4.3); tr1.material.color = new THREE.Color(0x4a4540);
     const tr2 = plane(TRX1 - TRX0, 0.24, T.plain(), (TRX0 + TRX1) / 2, 9.03, 5.7); tr2.material.color = new THREE.Color(0x4a4540);
+    // the rails are real iron: blow the deck away and you can still tightrope them
+    for (const rz of [4.3, 5.7]) {
+      addCollider(TRX0, 8.7, rz - 0.16, TRX1, 9.03, rz + 0.16, { step: true, noShoot: true });
+      slabs.push({ minx: TRX0, minz: rz - 0.16, maxx: TRX1, maxz: rz + 0.16, top: 9.03 });
+    }
     // low railings, with a gap where the ladder tower comes up
     const railA = WallGrid({ ox: TRX0, oy: 9, oz: 3.45, dir: 'x', cols: 78, rows: 1, cw: 1, ch: 0.8, th: 0.15, kind: 'fence', tint: 0x8a6b42, hp: 15, house: null });
     wallFill(railA, () => 0);

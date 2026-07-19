@@ -473,7 +473,8 @@ G.arsenal = (function () {
     }
   }
 
-  // ---------- airstrike ----------
+  // ---------- airstrike (on the station it's a called-in METEOR SHOWER) ----------
+  const meteorMode = () => G.world.mapId === 'station';
   let strikePending = null;
   A.callAirstrike = function () {
     if (!G.player.airstrikeReady) return;
@@ -487,19 +488,27 @@ G.arsenal = (function () {
     strikePending = { x: U.clamp(tx, -bnd.x + 2, bnd.x - 2), z: U.clamp(tz, -bnd.z + 2, bnd.z - 2), t: 2.2, dropped: 0, dropT: 0, mine: true };
     if (G.net && G.net.active) G.net.evStrike(strikePending.x, strikePending.z);
     G.audio.airstrikeCall();
-    G.game.banner('AIRSTRIKE INBOUND', '#ffd23e');
-    G.game.chat('HQ', 'fast air on the way, keep your head down');
+    if (meteorMode()) {
+      G.game.banner('METEOR SHOWER INBOUND', '#9fd4ff');
+      G.game.chat('MERIDIAN OPS', 'debris field redirected to your mark. gods help them.');
+    } else {
+      G.game.banner('AIRSTRIKE INBOUND', '#ffd23e');
+      G.game.chat('HQ', 'fast air on the way, keep your head down');
+    }
   };
   // a remote player's airstrike — bombs are visual, their owner sends the booms
   A.spawnStrikeVisual = function (x, z, friendly) {
     strikeVisuals.push({ x, z, t: 2.2, dropped: 0, dropT: 0 });
     G.audio.airstrikeCall();
-    if (friendly) G.game.banner('FRIENDLY AIRSTRIKE INBOUND', '#7dcfff');
-    else G.game.banner('ENEMY AIRSTRIKE INBOUND', '#ff6a4a');
+    const what = meteorMode() ? 'METEOR SHOWER' : 'AIRSTRIKE';
+    if (friendly) G.game.banner('FRIENDLY ' + what + ' INBOUND', '#7dcfff');
+    else G.game.banner('ENEMY ' + what + ' INBOUND', '#ff6a4a');
   };
   const strikeVisuals = [];
   const bombGeo = new THREE.CylinderGeometry(0.16, 0.05, 0.9, 6);
   const bombMat = new THREE.MeshBasicMaterial({ color: 0x2e3338 });
+  const meteorGeo = new THREE.DodecahedronGeometry(0.6);
+  let meteorMat = null; // lazy: texture module must be warm
   function runStrike(s, dt, visual) {
     s.t -= dt;
     if (s.t < 0.9 && !s.jetPlayed) { s.jetPlayed = true; G.audio.jet(); }
@@ -507,12 +516,18 @@ G.arsenal = (function () {
       s.dropT -= dt;
       if (s.dropT <= 0 && s.dropped < 6) {
         s.dropT = 0.13;
-        const mesh = new THREE.Mesh(bombGeo, bombMat);
+        let mesh;
+        if (meteorMode()) {
+          if (!meteorMat) meteorMat = new THREE.MeshBasicMaterial({ map: T.lavarock(), color: 0xff9a5a });
+          mesh = new THREE.Mesh(meteorGeo, meteorMat);
+        } else {
+          mesh = new THREE.Mesh(bombGeo, bombMat);
+        }
         const bx = s.x - 15 + s.dropped * 6 + U.rand(-1.5, 1.5);
         const bz = s.z + U.rand(-2.5, 2.5);
         mesh.position.set(bx, 42, bz);
         G.scene.add(mesh);
-        A.bombs.push({ mesh, x: bx, z: bz, y: 42, visual });
+        A.bombs.push({ mesh, x: bx, z: bz, y: 42, visual, meteor: meteorMode(), spin: U.rand(3, 6) });
         s.dropped++;
       }
       return s.dropped >= 6;
@@ -545,13 +560,15 @@ G.arsenal = (function () {
         G.scene.remove(b.mesh);
         A.bombs.splice(i, 1);
         if (!b.visual) {
+          const tag = b.meteor ? 'METEOR SHOWER' : 'AIRSTRIKE';
           tmpV.set(b.x, iy + 0.3, b.z);
-          G.world.explode(tmpV, 7, 160, { attacker: 'player', tag: 'AIRSTRIKE' });
-          if (G.net && G.net.active) G.net.evBoom(tmpV, 7, 160, 'AIRSTRIKE');
+          G.world.explode(tmpV, 7, 160, { attacker: 'player', tag });
+          if (G.net && G.net.active) G.net.evBoom(tmpV, 7, 160, tag);
         }
         continue;
       }
       b.mesh.position.set(b.x, b.y, b.z);
+      if (b.meteor) { b.mesh.rotation.x += b.spin * dt; b.mesh.rotation.z += b.spin * 0.7 * dt; }
     }
   }
 

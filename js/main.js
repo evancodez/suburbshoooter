@@ -595,7 +595,7 @@
     if (player.streak === 5 && player.airstrikeEarned < 1) {
       player.airstrikeReady = true;
       player.airstrikeEarned = 1;
-      game.banner('AIRSTRIKE READY — PRESS [T]', '#ff9d3e');
+      game.banner((G.world.mapId === 'station' ? 'METEOR SHOWER' : 'AIRSTRIKE') + ' READY — PRESS [T]', '#ff9d3e');
       G.audio.airstrikeCall();
     }
   }
@@ -973,6 +973,7 @@
       stall: 'Market stalls', dummy: 'Training dummies', rack: 'Weapon racks', tomb: 'Headstones',
       pane: 'Stained glass windows', organ: 'Pipe organs', globe: 'Terrestrial globes',
       lectern: 'Lecterns', books: 'Rare manuscripts', cookpot: 'Royal stew pots', candle: 'Candles',
+      hal: 'HAL 9000', core: 'Memory cores',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -986,6 +987,7 @@
       knight: 900, throne: 15000, chandelier: 3500, pillar: 1600, statue: 6000, gargoyle: 1200,
       banner: 250, brazier: 400, feast: 900, stall: 350, dummy: 150, rack: 700, tomb: 500,
       pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
+      hal: 9000, core: 1300,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
