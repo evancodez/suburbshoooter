@@ -28,7 +28,7 @@ G.world = (function () {
     knight: 900, throne: 15000, chandelier: 3500, pillar: 1600, statue: 6000, gargoyle: 1200,
     banner: 250, brazier: 400, feast: 900, stall: 350, dummy: 150, rack: 700, tomb: 500,
     pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
-    castle: 180, book: 45, amphora: 90, relic: 2200,
+    castle: 180, book: 45,
     // gold rush gulch
     wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
     keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120,
@@ -1227,11 +1227,6 @@ G.world = (function () {
     } else if (prop.kind === 'gargoyle') {
       G.audio.thud({ x: prop.x, y: prop.y, z: prop.z });
       if (G.game && Math.random() < 0.4) G.game.chat('HERALD', 'the gargoyle kept the evil spirits out. so. good luck.');
-    } else if (prop.kind === 'relic') {
-      G.audio.thud({ x: prop.x, y: prop.y, z: prop.z });
-      if (G.game && Math.random() < 0.5) G.game.chat('ANTIQUITIES BOARD', U.pick(['two thousand years. TWO THOUSAND.', 'that marble outlived an empire. not you though.', 'the restoration fund is going to need a bigger fund']));
-    } else if (prop.kind === 'amphora' && G.game && Math.random() < 0.3) {
-      G.game.chat('ANTIQUITIES BOARD', 'the wine in that was vintage. VERY vintage.');
     } else if (prop.kind === 'candle' || prop.kind === 'books') {
       // quiet little things — debris is enough
     } else if (prop.kind === 'tnt') {
@@ -1413,15 +1408,12 @@ G.world = (function () {
   };
 
   // ============ map construction ============
-  // ground overlays stack (grass → road → markings → rugs); polygonOffset by
-  // build order kills the z-fighting shimmer between the layers on every map
-  let planeBias = 0;
+  // NOTE: no polygonOffset on these — slope-scaled offsets make big ground
+  // planes leapfrog geometry at distance (floors visible through walls).
+  // Layer ordering comes from real y separation + a tighter camera near plane.
   function plane(w, d, texture, x, y, z) {
     const g = new THREE.PlaneGeometry(w, d);
-    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({
-      map: texture,
-      polygonOffset: true, polygonOffsetFactor: -2 - (planeBias++ % 30), polygonOffsetUnits: -2,
-    }));
+    const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: texture }));
     m.rotation.x = -Math.PI / 2;
     m.position.set(x, y, z);
     grp.add(m);
@@ -1913,7 +1905,6 @@ G.world = (function () {
     { id: 'station', name: 'MERIDIAN STATION' },
     { id: 'gulch', name: 'GOLD RUSH GULCH' },
     { id: 'citadel', name: 'THE CITADEL' },
-    { id: 'colosseum', name: 'THE COLOSSEUM' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
@@ -1952,12 +1943,10 @@ G.world = (function () {
     W.minimapPaint = null;
     W.zeroG = false;
     W.hasGround = true;
-    planeBias = 0;
     if (W.mapId === 'island') buildIslandMap();
     else if (W.mapId === 'station') buildStationMap();
     else if (W.mapId === 'gulch') buildGulchMap();
     else if (W.mapId === 'citadel') buildCitadelMap();
-    else if (W.mapId === 'colosseum') buildColosseumMap();
     else buildSuburbs();
     finishBuild();
     navBuild();
@@ -3911,314 +3900,6 @@ G.world = (function () {
       }
     };
     addSky(0xd9a06a, { clouds: 7, cloudTint: 0xf2cf9e, sunTint: 0xff9e4a, sunPos: [-150, 38, 40], sunScale: 46 });
-  }
-
-  // ============ MAP: THE COLOSSEUM — Rome, but destructible ============
-  // Design: a stepped-octagon amphitheatre. Raised sand arena over a hypogeum
-  // tunnel grid (trapdoor ladders pop up mid-fight), bleacher tiers with aisle
-  // stairs, an upper gallery behind the intact north arcades, and a collapsed
-  // south half — stubs, rubble, open sky. Columns are single-column wall grids,
-  // so shooting out the base course drops the shaft course by course; statues
-  // come apart in three pieces. Heads first, usually.
-  function buildColosseumMap() {
-    W.bounds = { x: 52, z: 44 };
-    W.teamSpawns = [{ x: 0, z: -38 }, { x: 0, z: 38 }];
-
-    // grounds
-    plane(420, 420, T.grass(), 0, -0.01, 0).material.map.repeat.set(56, 56);
-    const plaza = plane(40, 15, T.sidewalk(), 0, 0.02, -27);
-    plaza.material.map.repeat.set(10, 4);
-    plaza.material.color = new THREE.Color(0xe0d6bc);
-    const sroad = plane(34, 14, T.gravel(), 0, 0.02, 27);
-    sroad.material.map.repeat.set(9, 4);
-    sroad.material.color = new THREE.Color(0xc9bda4);
-
-    // realm limits
-    addCollider(-58, 0, -50, -52.4, 24, 50, { noShoot: true });
-    addCollider(52.4, 0, -50, 58, 24, 50, { noShoot: true });
-    addCollider(-58, 0, -50, 58, 24, -44.4, { noShoot: true });
-    addCollider(-58, 0, 44.4, 58, 24, 50, { noShoot: true });
-
-    const ROMA = 0xd9cdb0; // sun-bleached travertine
-    const CAS = (o, dir, cols, rows, fn, tint, hp) => {
-      const wl = WallGrid({ ox: o.ox, oy: o.oy === undefined ? 0 : o.oy, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.4, kind: 'castle', tint: tint || ROMA, hp: hp || 58, house: null });
-      wallFill(wl, fn || (() => 0));
-    };
-    const stoneG = [], sandG2 = [];
-    function deckInto(list, cx, cz, w, d, topY, thick) {
-      thick = thick || 0.26;
-      const g = U.shadedBoxGeo(w, thick, d);
-      g.translate(cx, topY - thick / 2, cz);
-      list.push(g);
-      addCollider(cx - w / 2, topY - thick, cz - d / 2, cx + w / 2, topY, cz + d / 2, { step: true });
-      slabs.push({ minx: cx - w / 2, minz: cz - d / 2, maxx: cx + w / 2, maxz: cz + d / 2, top: topY });
-    }
-    const sdeck = (cx, cz, w, d, topY, thick) => deckInto(stoneG, cx, cz, w, d, topY, thick);
-    const adeck = (cx, cz, w, d) => deckInto(sandG2, cx, cz, w, d, 2.2, 0.3); // arena sand decks
-    function sblock(x0, y0, z0, x1, y1, z1, plain) {
-      const g = U.shadedBoxGeo(x1 - x0, y1 - y0, z1 - z0);
-      g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-      stoneG.push(g);
-      addCollider(x0, y0, z0, x1, y1, z1, plain ? {} : { step: true });
-      slabs.push({ minx: x0, minz: z0, maxx: x1, maxz: z1, top: y1 });
-    }
-    const flameTex = T.flame();
-    const flames = [];
-    function flame(x, y, z, s) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: flameTex, transparent: true, depthWrite: false }));
-      sp.position.set(x, y, z); sp.scale.set(s, s * 1.5, 1); sp.userData.s = s;
-      grp.add(sp); flames.push(sp);
-    }
-    // marble column = a one-column wall grid: shoot out the base course and the
-    // support engine drops the rest, course by course. Granular demolition.
-    function column(x, z, rows, oy, tint) {
-      const wl = WallGrid({ ox: x - 0.55, oy: oy || 0, oz: z, dir: 'x', cols: 1, rows, cw: 1.1, ch: 0.72, th: 0.9, kind: 'castle', tint: tint || 0xe4dcc6, hp: 34, house: null });
-      wallFill(wl, () => 0);
-    }
-    // a statue in three pieces: plinth, torso, head — snipe the head clean off
-    function statue3(x, z, ry) {
-      addProp('relic', x, 0, z, 1.5, 1.0, 1.5, T.cinder, 0xd6ccb4, 60, { rotY: ry || 0 });
-      addProp('relic', x, 1.0, z, 0.9, 1.7, 0.7, T.cinder, 0xe0d6bc, 45, { rotY: ry || 0, noWalk: true });
-      addProp('relic', x, 2.7, z, 0.5, 0.55, 0.5, T.cinder, 0xe8dfc8, 25, { rotY: ry || 0, noWalk: true });
-    }
-    function cypress(x, z) {
-      const tm = new THREE.Mesh(U.shadedBoxGeo(0.34, 1.4, 0.34), trunkMat);
-      tm.position.set(x, 0.7, z);
-      grp.add(tm);
-      const c1 = new THREE.Mesh(new THREE.ConeGeometry(1.0, 3.6, 7), new THREE.MeshBasicMaterial({ map: T.leaf(), color: 0x2e5e30 }));
-      c1.position.set(x, 3.1, z);
-      grp.add(c1);
-      const c2 = new THREE.Mesh(new THREE.ConeGeometry(0.62, 2.2, 7), new THREE.MeshBasicMaterial({ map: T.leaf(), color: 0x376e38 }));
-      c2.position.set(x, 4.6, z);
-      grp.add(c2);
-      addCollider(x - 0.25, 0, z - 0.25, x + 0.25, 4.4, z + 0.25, { tree: true });
-    }
-
-    // ================= HYPOGEUM (under the arena, y 0..2.2) =================
-    // voids: spine z -1.4..1.4 (x -13..13) | cross x -1.4..1.4 (z -8..12.5,
-    // running out the south gate) | west cell x -11..-5 z -7..-3 | east cell
-    // x 5..11 z 3..7
-    sblock(-15, 0, -10, -13, 2.2, 10, true);
-    sblock(13, 0, -10, 15, 2.2, 10, true);
-    sblock(-13, 0, -10, -1.4, 2.2, -8, true);
-    sblock(1.4, 0, -10, 13, 2.2, -8, true);
-    sblock(-13, 0, -8, -11, 2.2, -1.4, true);
-    sblock(-5, 0, -8, -1.4, 2.2, -3, true);
-    sblock(-13, 0, -3, -11, 2.2, -1.4, true);
-    sblock(-11, 0, -3, -8.2, 2.2, -1.4, true);   // doorway into the west cell
-    sblock(-6.2, 0, -3, -1.4, 2.2, -1.4, true);
-    sblock(1.4, 0, -8, 13, 2.2, -1.4, true);
-    sblock(-13, 0, 1.4, -1.4, 2.2, 3, true);
-    sblock(1.4, 0, 1.4, 6.4, 2.2, 3, true);     // doorway into the east cell
-    sblock(8.4, 0, 1.4, 13, 2.2, 3, true);
-    sblock(-13, 0, 3, -1.4, 2.2, 10, true);
-    sblock(1.4, 0, 3, 5, 2.2, 10, true);
-    sblock(11, 0, 3, 13, 2.2, 10, true);
-    sblock(5, 0, 7, 11, 2.2, 10, true);
-    // hypogeum dressing
-    flame(-12.6, 1.7, 0, 0.5); flame(12.6, 1.7, 0, 0.5);
-    flame(0, 1.7, -7.6, 0.5); flame(-7.8, 1.7, -5.4, 0.5); flame(7.8, 1.7, 5.4, 0.5);
-    addProp('crate', -9, 0, -5.5, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
-    addProp('keg', -6.5, 0, -4.2, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
-    addProp('amphora', 9.5, 0, 4.4, 0.6, 1.0, 0.6, T.plain, 0xc9743a, 12, {});
-    addProp('amphora', 8.2, 0, 5.6, 0.6, 1.0, 0.6, T.plain, 0xb56530, 12, {});
-    addProp('rack', 6.2, 0, 4.6, 0.5, 1.8, 1.6, T.shelf, 0xffffff, 45, {});
-    addProp('dummy', -2.6, 0, -0.2, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
-
-    // ================= THE ARENA (sand decks + trapdoors) =================
-    adeck(0, -5.475, 30, 9.05);
-    adeck(-11.875, 0, 6.25, 1.9);
-    adeck(-8, -0.65, 1.5, 0.6);        // hatch A backstop
-    adeck(0, 0, 14.5, 1.9);
-    adeck(8, 0.65, 1.5, 0.6);          // hatch B backstop
-    adeck(11.875, 0, 6.25, 1.9);
-    adeck(0, 2.95, 30, 4);
-    adeck(-7.975, 5.5, 14.05, 1.1);
-    adeck(-0.65, 5.5, 0.6, 1.1);       // hatch C backstop
-    adeck(7.925, 5.5, 14.15, 1.1);
-    adeck(0, 8.025, 30, 3.95);
-    addLadder(-8, 0, 0, 2.2, 's');
-    addLadder(8, 0, 0, 2.2, 'n');
-    addLadder(0, 5.5, 0, 2.2, 'e');
-
-    // ================= PODIUM WALL (arena rim, gates north + south) =================
-    const gateF = (c, r) => (c >= 13 && c <= 16 && r <= 2) ? 1 : 0;
-    CAS({ ox: -15, oy: 2.2, oz: -10 }, 'x', 30, 3, gateF, ROMA, 45);
-    CAS({ ox: -15, oy: 2.2, oz: 10 }, 'x', 30, 3, gateF, ROMA, 45);
-    CAS({ ox: -15, oy: 2.2, oz: -10 }, 'z', 20, 3, null, ROMA, 45);
-    CAS({ ox: 15, oy: 2.2, oz: -10 }, 'z', 20, 3, null, ROMA, 45);
-    flame(-2.6, 4.7, -10, 0.55); flame(2.6, 4.7, -10, 0.55);
-    flame(-2.6, 4.7, 10, 0.55); flame(2.6, 4.7, 10, 0.55);
-
-    // ================= CAVEA (three bleacher tiers + aisles) =================
-    // north & south bands (split at the centre aisle)
-    for (const sgn of [-1, 1]) {
-      const zi = sgn * 10, s = (k) => sgn * (10 + 2 * k);
-      for (const [x0, x1] of [[-15, -1.4], [1.4, 15]]) {
-        sblock(x0, 0, Math.min(zi, s(1)), x1, 3.4, Math.max(zi, s(1)), true);
-        sblock(x0, 0, Math.min(s(1), s(2)), x1, 4.8, Math.max(s(1), s(2)), true);
-        sblock(x0, 0, Math.min(s(2), s(3)), x1, 6.2, Math.max(s(2), s(3)), true);
-      }
-    }
-    // east & west bands
-    for (const sgn of [-1, 1]) {
-      const xi = sgn * 15, s = (k) => sgn * (15 + 2 * k);
-      for (const [z0, z1] of [[-10, -1.4], [1.4, 10]]) {
-        sblock(Math.min(xi, s(1)), 0, z0, Math.max(xi, s(1)), 3.4, z1, true);
-        sblock(Math.min(s(1), s(2)), 0, z0, Math.max(s(1), s(2)), 4.8, z1, true);
-        sblock(Math.min(s(2), s(3)), 0, z0, Math.max(s(2), s(3)), 6.2, z1, true);
-      }
-    }
-    // stepped corner plateaus
-    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
-      const X = (a, b) => sx < 0 ? [-b, -a] : [a, b];
-      const Z = (a, b) => sz < 0 ? [-b, -a] : [a, b];
-      let [x0, x1] = X(15, 21), [z0, z1] = Z(10, 16);
-      sblock(x0, 0, z0, x1, 3.4, z1, true);
-      [x0, x1] = X(17, 21); [z0, z1] = Z(12, 16);
-      sblock(x0, 0, z0, x1, 4.8, z1, true);
-      [x0, x1] = X(19, 21); [z0, z1] = Z(14, 16);
-      sblock(x0, 0, z0, x1, 6.2, z1, true);
-    }
-    // aisle stairs: arena gates → top of the seating (north + south)
-    buildStairs(0, -10.7, 0, -1, 2.8, 11, 0.365, 0.55, 2.2);
-    buildStairs(0, 10.7, 0, 1, 2.8, 11, 0.365, 0.55, 2.2);
-    // vomitoria stairs: outside → seating tier one (east + west)
-    buildStairs(22.6, 0, -1, 0, 2.6, 10, 0.34, 0.55, 0);
-    buildStairs(-22.6, 0, 1, 0, 2.6, 10, 0.34, 0.55, 0);
-    sdeck(16.2, 0, 2.4, 2.8, 3.4);      // vomitoria landings: stair top → tier one
-    sdeck(-16.2, 0, 2.4, 2.8, 3.4);
-
-    // ================= OUTER RING (stepped octagon; north standing, south fallen) =================
-    const intactF = (c, r) => {
-      if (c % 4 <= 1 && r <= 3) return 1;               // ground arcade
-      if (c % 4 <= 1 && r >= 5 && r <= 8) return 1;     // mid arcade
-      if (c % 4 === 1 && r >= 10 && r <= 12) return 1;  // attic windows
-      return 0;
-    };
-    const rag = [4, 2, 1, 3, 5, 2, 1, 2];
-    const ruinF = (c, r) => r >= rag[c % 8] ? 1 : 0;
-    const eDoor = (c, r) => (c >= 12 && c <= 13 && r <= 4) ? 1 : intactF(c, r);
-    // clean gate arches where the north/south ground tunnels meet the ring
-    const nGate = (c, r) => (c >= 17 && c <= 20 && r <= 4) ? 1 : intactF(c, r);
-    const sGate = (c, r) => (c >= 17 && c <= 20 && r <= 4) ? 1 : ruinF(c, r);
-    const ring = [
-      ['x', -19, -19, 38, nGate],                                   // north
-      ['z', 19, -19, 5, intactF], ['x', 19, -14, 5, intactF],       // NE chamfer
-      ['z', 24, -14, 14, eDoor], ['z', 24, 0, 14, ruinF],           // east
-      ['x', 19, 14, 5, ruinF], ['z', 19, 14, 5, ruinF],             // SE chamfer
-      ['x', -19, 19, 38, sGate],                                    // south
-      ['x', -24, 14, 5, ruinF], ['z', -19, 14, 5, ruinF],           // SW chamfer
-      ['z', -24, -14, 14, eDoor], ['z', -24, 0, 14, ruinF],         // west
-      ['x', -24, -14, 5, intactF], ['z', -19, -19, 5, intactF],     // NW chamfer
-    ];
-    for (const [dir, ox, oz, cols, fn] of ring) CAS({ ox, oz }, dir, cols, 15, fn, ROMA, 60);
-
-    // ================= GALLERIES (behind the north arcades, 7.4 up) =================
-    sdeck(0, -17.5, 36, 2.6, 7.4);
-    sdeck(22.5, -8.9, 2.2, 13.8, 7.4);
-    sdeck(-22.5, -8.9, 2.2, 13.8, 7.4);
-    buildStairs(-10, -15.7, 0, -1, 2, 4, 0.3, 0.5, 6.2);
-    buildStairs(10, -15.7, 0, -1, 2, 4, 0.3, 0.5, 6.2);
-    const gRail = (o, dir, cols) => {
-      const wl = WallGrid({ ...o, oy: 7.4, dir, cols, rows: 1, cw: 1, ch: 0.66, th: 0.14, kind: 'castle', tint: 0xc9bda4, hp: 16, house: null });
-      wallFill(wl, (c) => c % 5 === 2 ? 1 : 0);
-    };
-    gRail({ ox: -18, oz: -16.2 }, 'x', 36);
-    gRail({ ox: 21.4, oz: -15.8 }, 'z', 14);
-    gRail({ ox: -21.4, oz: -15.8 }, 'z', 14);
-
-    // ================= THE EMPEROR'S BOX (north gallery, dead centre) =================
-    column(-3.2, -17.6, 3, 7.4, 0xe8dfc8);
-    column(3.2, -17.6, 3, 7.4, 0xe8dfc8);
-    sdeck(0, -17.6, 8.2, 2.9, 9.83, 0.22);      // canopy roof
-    addProp('throne', 0, 7.4, -18.1, 1.4, 2.1, 1.1, T.plain, 0xd8b23a, 110, {});
-    addProp('banner', -2.2, 8.3, -18.7, 1.1, 2.0, 0.12, () => T.heraldry(), 0xffffff, 15, { noWalk: true });
-    addProp('banner', 2.2, 8.3, -18.7, 1.1, 2.0, 0.12, () => T.heraldry(), 0xffffff, 15, { noWalk: true });
-    addProp('brazier', -5.2, 7.4, -17.8, 0.7, 1.0, 0.7, T.gunmetal, 0x4a4640, 30, { metal: true });
-    addProp('brazier', 5.2, 7.4, -17.8, 0.7, 1.0, 0.7, T.gunmetal, 0x4a4640, 30, { metal: true });
-    flame(-5.2, 8.75, -17.8, 0.55); flame(5.2, 8.75, -17.8, 0.55);
-
-    // ================= NORTH PLAZA: colonnade, statues, market =================
-    for (const cx of [-10.5, -3.5, 3.5, 10.5]) {
-      column(cx, -24, 7);
-      column(cx, -30, 7);
-    }
-    statue3(-15, -26, 0.4);
-    statue3(15, -26, -0.4);
-    addProp('stall', -7, 0, -34, 2.6, 1.9, 1.6, T.plywood, 0x8f3a2e, 40, {});
-    addProp('stall', 7, 0, -34, 2.6, 1.9, 1.6, T.plywood, 0x2e5a8f, 40, {});
-    addProp('amphora', -4.5, 0, -32.5, 0.6, 1.0, 0.6, T.plain, 0xc9743a, 12, {});
-    addProp('amphora', -3.4, 0, -33.3, 0.6, 1.0, 0.6, T.plain, 0xb56530, 12, {});
-    addProp('amphora', 4.2, 0, -31.8, 0.6, 1.0, 0.6, T.plain, 0xc9743a, 12, {});
-    addProp('bench', 0, 0, -31, 1.7, 0.55, 0.6, T.plain, 0xb0a488, 25, {});
-    addProp('brazier', -12, 0, -33, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
-    flame(-12, 1.5, -33, 0.6);
-    cypress(-19, -30); cypress(19, -30); cypress(-24, -22); cypress(24, -22);
-    addProp('wagon', 17, 0, -34, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
-
-    // ================= SOUTH RUIN FIELD =================
-    sblock(-8, 0, 24, -4.6, 1.3, 27);
-    sblock(3, 0, 28, 6.4, 1.0, 30.6);
-    sblock(-14, 0, 31, -11, 1.6, 34);
-    sblock(9, 0, 33, 12.4, 0.8, 35.6);
-    column(-6, 30, 2);
-    column(8, 25, 3);
-    column(-12, 26, 1);
-    // a toppled statue, face down in the grass
-    addProp('relic', 2, 0, 33.5, 1.7, 0.65, 0.9, T.cinder, 0xd0c6ae, 45, { rotY: 0.5 });
-    addProp('relic', 0.2, 0, 34.6, 0.55, 0.5, 0.55, T.cinder, 0xe0d6bc, 25, { rotY: 0.5 });
-    cypress(-18, 28); cypress(20, 30);
-    addProp('hay', 14, 0, 27, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-
-    // merge stonework + arena sand
-    if (stoneG.length) grp.add(new THREE.Mesh(U.mergeGeos(stoneG.splice(0)), new THREE.MeshBasicMaterial({ map: T.castlebrick(), vertexColors: true, color: 0xd6cbb2 })));
-    if (sandG2.length) grp.add(new THREE.Mesh(U.mergeGeos(sandG2.splice(0)), new THREE.MeshBasicMaterial({ map: T.desert(), vertexColors: true, color: 0xe8d29a })));
-
-    // ---- flow ----
-    W.spawnPoints = [
-      { x: 0, z: -38 }, { x: 0, z: 38 }, { x: -24, z: -34 }, { x: 24, z: -34 },
-      { x: -30, z: 30 }, { x: 30, z: 30 }, { x: -36, z: 0 }, { x: 36, z: 0 },
-      { x: 0, z: 0 }, { x: -10, z: -5 }, { x: 10, z: 5 }, { x: -18, z: -14 },
-      { x: 18, z: 14 }, { x: -28, z: 14 }, { x: 28, z: -14 }, { x: 0, z: 30 },
-    ];
-    W.campSpots.push(
-      { x: 0, z: -17.5, yaw: 0 },                          // the emperor's box
-      { x: 22.5, z: -8, yaw: -Math.PI / 2 },               // east gallery
-      { x: -22.5, z: -8, yaw: Math.PI / 2 },               // west gallery
-      { x: 20, z: -15, yaw: Math.atan2(20, -15) },         // NE plateau
-      { x: -20, z: 15, yaw: Math.atan2(-20, 15) },         // SW plateau
-      { x: -12.5, z: 31.5, yaw: Math.atan2(-12.5, 31.5) }, // rubble mound
-    );
-    W.hillSpots = [
-      { x: 0, z: 0, y: 2.2, r: 5.5 },     // the arena
-      { x: 0, z: -27, y: 0, r: 5.5 },     // the plaza
-      { x: 0, z: 27, y: 0, r: 5.5 },      // the south road
-      { x: -18, z: 0, y: 3.4, r: 5.5 },   // west tier one
-    ];
-    W.minimapPaint = function (x, s, ox, oz) {
-      x.fillStyle = '#5f8a42'; x.fillRect(0, 0, 144 * s, 116 * s);
-      x.fillStyle = '#e0d6bc'; x.fillRect((ox - 20) * s, (oz - 34.5) * s, 40 * s, 15 * s);   // plaza
-      x.fillStyle = '#c9bda4'; x.fillRect((ox - 17) * s, (oz + 20) * s, 34 * s, 14 * s);     // south road
-      x.fillStyle = '#b3a78c';                                                              // the ring
-      x.fillRect((ox - 24) * s, (oz - 19) * s, 48 * s, 38 * s);
-      x.fillStyle = '#8d8268';
-      x.fillRect((ox - 21) * s, (oz - 16) * s, 42 * s, 32 * s);
-      x.fillStyle = '#e8d29a'; x.fillRect((ox - 15) * s, (oz - 10) * s, 30 * s, 20 * s);     // the sand
-      x.fillStyle = '#4a453e';                                                              // hypogeum lines
-      x.fillRect((ox - 13) * s, (oz - 1.4) * s, 26 * s, 2.8 * s);
-      x.fillRect((ox - 1.4) * s, (oz - 8) * s, 2.8 * s, 20 * s);
-    };
-    W.mapUpdate = function (dt) {
-      const t = W.mapClock * 13;
-      for (let i = 0; i < flames.length; i++) {
-        const f = flames[i];
-        const k = 0.88 + Math.sin(t + f.position.x * 7.3 + f.position.z * 3.1) * 0.14;
-        f.scale.x = f.userData.s * k;
-        f.scale.y = f.userData.s * 1.5 * (2 - k);
-      }
-    };
-    addSky(0x86c8f2, { clouds: 6, sunTint: 0xfff0c0, sunPos: [140, 100, -80], sunScale: 30 });
   }
 
   function buildPalm(x, z, lean) {
