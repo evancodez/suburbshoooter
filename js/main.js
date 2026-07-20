@@ -974,6 +974,7 @@
       pane: 'Stained glass windows', organ: 'Pipe organs', globe: 'Terrestrial globes',
       lectern: 'Lecterns', books: 'Rare manuscripts', cookpot: 'Royal stew pots', candle: 'Candles',
       hal: 'HAL 9000', core: 'Memory cores',
+      castle: 'Cut stone (block)', book: 'Library shelving', amphora: 'Amphorae', relic: 'Ancient marbles',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -988,6 +989,7 @@
       banner: 250, brazier: 400, feast: 900, stall: 350, dummy: 150, rack: 700, tomb: 500,
       pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
       hal: 9000, core: 1300,
+      castle: 180, book: 45, amphora: 90, relic: 2200,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
@@ -1145,7 +1147,7 @@
     x.clearRect(0, 0, S, S);
     x.save();
     x.beginPath(); x.arc(R, R, R - 2, 0, 7); x.clip();
-    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'citadel' ? '#5a7a3f' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
+    x.fillStyle = G.world.mapId === 'island' ? '#25748d' : G.world.mapId === 'gulch' ? '#b3763f' : G.world.mapId === 'citadel' ? '#5a7a3f' : G.world.mapId === 'colosseum' ? '#5f8a42' : G.world.mapId === 'station' ? '#0a0d18' : '#2c661f';
     x.fillRect(0, 0, S, S);
     x.translate(R, R);
     x.rotate(player.yaw);

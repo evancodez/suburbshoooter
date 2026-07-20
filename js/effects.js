@@ -106,7 +106,10 @@ G.fx = (function () {
     for (let i = 0; i < cap; i++) { mesh.setMatrixAt(i, dummy.matrix); if (colorize) mesh.setColorAt(i, new THREE.Color(1, 1, 1)); }
     mesh.instanceMatrix.needsUpdate = true;
     scene.add(mesh);
-    const D = { mesh, cap, head: 0, grow: [] };
+    const D = {
+      mesh, cap, head: 0, grow: [],
+      px: new Float32Array(cap).fill(-9999), py: new Float32Array(cap), pz: new Float32Array(cap),
+    };
     const up = new THREE.Vector3(0, 1, 0);
     D.spawn = function (x, y, z, normal, size, tint) {
       const i = D.head; D.head = (D.head + 1) % cap;
@@ -124,15 +127,28 @@ G.fx = (function () {
       dummy.scale.setScalar(size);
       dummy.updateMatrix();
       D.mesh.setMatrixAt(i, dummy.matrix);
+      D.px[i] = dummy.position.x; D.py[i] = dummy.position.y; D.pz[i] = dummy.position.z;
       if (D.mesh.instanceColor && tint) { D.mesh.setColorAt(i, tint); D.mesh.instanceColor.needsUpdate = true; }
       D.mesh.instanceMatrix.needsUpdate = true;
       return i;
+    };
+    // surface got destroyed → its decals must not haunt the air where it stood
+    D.clearBox = function (x0, y0, z0, x1, y1, z1) {
+      let touched = false;
+      for (let i = 0; i < cap; i++) {
+        if (D.px[i] < x0 || D.px[i] > x1 || D.py[i] < y0 || D.py[i] > y1 || D.pz[i] < z0 || D.pz[i] > z1) continue;
+        D.px[i] = -9999;
+        dummy.position.set(0, -999, 0); dummy.scale.setScalar(0.001); dummy.rotation.set(0, 0, 0); dummy.updateMatrix();
+        D.mesh.setMatrixAt(i, dummy.matrix);
+        touched = true;
+      }
+      if (touched) D.mesh.instanceMatrix.needsUpdate = true;
     };
     return D;
   }
 
   // ============ Debris (physical chunks) ============
-  const DEBRIS_CAP = 380;
+  const DEBRIS_CAP = 1400; // big enough that chain explosions don't eat their own rubble
   let debris;
   function initDebris() {
     const geo = U.shadedBoxGeo(1, 1, 1);
@@ -155,7 +171,22 @@ G.fx = (function () {
   }
   FX.debris = function (pos, vel, sx, sy, sz, color, life, bloody) {
     const d = debris;
-    const i = d.head; d.head = (d.head + 1) % DEBRIS_CAP;
+    // find a genuinely free slot first — never overwrite a chunk that's still
+    // tumbling through the air (that's the "my rubble just vanished" bug).
+    // If truly full, steal the oldest chunk already asleep on the ground.
+    let i = -1;
+    for (let k = 0; k < DEBRIS_CAP; k++) {
+      const j = (d.head + k) % DEBRIS_CAP;
+      if (d.age[j] <= 0) { i = j; break; }
+    }
+    if (i < 0) {
+      let bestAge = -1;
+      for (let j = 0; j < DEBRIS_CAP; j++) {
+        if (d.asleep[j] && d.age[j] > bestAge) { bestAge = d.age[j]; i = j; }
+      }
+      if (i < 0) i = d.head;
+    }
+    d.head = (i + 1) % DEBRIS_CAP;
     d.pos[i].copy(pos);
     d.vel[i].copy(vel);
     d.ang[i].set(U.rand(-6, 6), U.rand(-6, 6), U.rand(-6, 6));
@@ -354,6 +385,14 @@ G.fx = (function () {
     const d = decals[kind];
     if (!d) return -1;
     return d.spawn(x, y, z, normal, size, tint);
+  };
+  // the surface under these decals just got destroyed — take the decals with it
+  FX.clearDecalsIn = function (x0, y0, z0, x1, y1, z1) {
+    for (const k in decals) decals[k].clearBox(x0, y0, z0, x1, y1, z1);
+    for (let i = bloodPoolGrow.length - 1; i >= 0; i--) {
+      const g = bloodPoolGrow[i];
+      if (g.x >= x0 && g.x <= x1 && g.z >= z0 && g.z <= z1) bloodPoolGrow.splice(i, 1);
+    }
   };
 
   FX.bloodPool = function (x, z, maxSize) {
