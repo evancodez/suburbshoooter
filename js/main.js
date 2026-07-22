@@ -152,6 +152,102 @@
       renderPauseHost();
     }
   });
+  // ---------- gamepad (PS5 DualSense & friends, standard mapping) ----------
+  // sticks move/look · R2 fire · L2 aim · ✕ jump · ◯ crouch · □ reload
+  // △ next weapon · d-pad left/right cycle · d-pad up airstrike · L1 grenade
+  // R1 melee · L3 sprint · OPTIONS pause. Menus stay mouse-driven.
+  let padConnected = false, padHeld = {}, padPrevB = [], padFire = false, padAds = false;
+  window.addEventListener('gamepadconnected', () => { padConnected = true; updatePadUI(); });
+  window.addEventListener('gamepaddisconnected', () => { padConnected = false; updatePadUI(); });
+  function activePad() {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const p of pads) if (p && p.connected) return p;
+    return null;
+  }
+  const PAD_DEAD = 0.16;
+  const padCurve = (v) => {
+    const a = Math.abs(v) < PAD_DEAD ? 0 : (Math.abs(v) - PAD_DEAD) / (1 - PAD_DEAD);
+    return Math.sign(v) * a * a; // squared response: precise near center, quick at the edge
+  };
+  function padKey(code, want) {
+    if (want) { keys[code] = true; padHeld[code] = true; }
+    else if (padHeld[code]) {
+      keys[code] = false;
+      padHeld[code] = false;
+      if (code === 'KeyW') sprintLatch = false;
+    }
+  }
+  function padReleaseAll() {
+    for (const code in padHeld) if (padHeld[code]) { keys[code] = false; padHeld[code] = false; }
+    if (padFire) { G.arsenal.fireUp(); padFire = false; }
+    if (padAds) { G.arsenal.adsUp(); padAds = false; }
+  }
+  function pollGamepad(dt) {
+    if (!settings.gamepad) return;
+    const gp = activePad();
+    if (!gp) return;
+    if (!padConnected) { padConnected = true; updatePadUI(); }
+    const b = gp.buttons || [];
+    const pv = (i) => b[i] ? (b[i].value || (b[i].pressed ? 1 : 0)) : 0;
+    const pressed = (i) => !!(b[i] && b[i].pressed);
+    const edge = (i) => pressed(i) && !padPrevB[i];
+    const inPlay = game.state === 'playing' && !game.paused && player.alive;
+    if (inPlay) {
+      // left stick → movement keys
+      const mx = padCurve(gp.axes[0] || 0), my = padCurve(gp.axes[1] || 0);
+      padKey('KeyW', my < -0.09);
+      padKey('KeyS', my > 0.09);
+      padKey('KeyA', mx < -0.09);
+      padKey('KeyD', mx > 0.09);
+      if (edge(10) && my < -0.05) sprintLatch = true;   // L3 while pushing forward
+      padKey('Space', pressed(0));                       // ✕: jump / climb / fly
+      padKey('KeyC', pressed(1));                        // ◯: crouch / slide
+      // right stick → look (same sens + scope factors as the mouse)
+      const scopeK = G.arsenal.isScoped() ? (G.arsenal.currentId === 'dmr' ? 0.55 : 0.3) : 1;
+      const rate = settings.sens * 3.1 * scopeK;
+      const lx = padCurve(gp.axes[2] || 0), ly = padCurve(gp.axes[3] || 0);
+      if (lx || ly) {
+        player.yaw -= lx * rate * dt;
+        player.pitch = U.clamp(player.pitch - ly * rate * dt, -1.51, 1.51);
+        game.lookDX = lx * 14; game.lookDY = ly * 14;
+      }
+      // triggers
+      const fire = pv(7) > 0.25, ads = pv(6) > 0.25;
+      if (fire && !padFire) G.arsenal.fireDown();
+      if (!fire && padFire) G.arsenal.fireUp();
+      padFire = fire;
+      if (ads && !padAds) G.arsenal.adsDown();
+      if (!ads && padAds) G.arsenal.adsUp();
+      padAds = ads;
+      if (edge(2)) G.arsenal.reload();                   // □
+      if (edge(3)) G.arsenal.cycle(1);                   // △
+      if (edge(5)) G.arsenal.melee();                    // R1
+      if (edge(4)) G.arsenal.throwNade();                // L1
+      if (edge(12)) G.arsenal.callAirstrike();           // d-pad up
+      if (edge(14)) G.arsenal.cycle(-1);                 // d-pad left
+      if (edge(15)) G.arsenal.cycle(1);                  // d-pad right
+      if (edge(9)) {                                     // OPTIONS: pause
+        try { document.exitPointerLock(); } catch (err) {}
+        game.paused = true;
+        $('pause').style.display = 'flex';
+        renderPauseHost();
+      }
+    } else {
+      padReleaseAll();
+    }
+    padPrevB = [];
+    for (let i = 0; i < b.length; i++) padPrevB.push(!!(b[i] && b[i].pressed));
+  }
+  function updatePadUI() {
+    const el = document.getElementById('padStatus');
+    if (!el) return;
+    el.textContent = settings.gamepad
+      ? (padConnected
+        ? 'connected ✓ — sticks move/look · R2 fire · L2 aim · ✕ jump · ◯ crouch · □ reload · △ + d-pad weapons · L1 grenade · R1 melee · L3 sprint · d-pad ↑ airstrike · OPTIONS pause. menus still use the mouse.'
+        : 'press any button on the controller to wake it up')
+      : (padConnected ? 'controller detected — switch to PS5 / GAMEPAD to use it' : '');
+  }
+
   // host-only mid-match controls on the pause screen
   function renderPauseHost() {
     const N = G.net;
@@ -1262,6 +1358,16 @@
   });
   document.querySelectorAll('#layoutSel button').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.v) === (settings.layout || 1)));
   if (!document.querySelector('#layoutSel .sel')) document.querySelector('#layoutSel button[data-v="1"]').classList.add('sel');
+  $('padSel').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    settings.gamepad = b.dataset.v === '1';
+    saveSettings();
+    document.querySelectorAll('#padSel button').forEach(x => x.classList.toggle('sel', x === b));
+    updatePadUI();
+  });
+  document.querySelectorAll('#padSel button').forEach(b => b.classList.toggle('sel', (b.dataset.v === '1') === !!settings.gamepad));
+  updatePadUI();
   renderControls();
   // preselect from settings
   document.querySelectorAll('#diffSel button').forEach(b => b.classList.toggle('sel', b.dataset.v === settings.diff));
@@ -1594,6 +1700,7 @@
       G.fx.update(dt, camera);
       G.world.update(dt);
     } else if (game.state === 'playing' || game.state === 'dead') {
+      pollGamepad(dt);
       if (game.state === 'playing') updatePlayer(dt);
       if (game.state === 'dead') {
         player.deathT -= dt;
