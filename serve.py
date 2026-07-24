@@ -34,7 +34,9 @@ def now():
 def reap_stale():
     """Drop players that stopped polling; if the host vanishes, tell everyone."""
     global HOST_PID
-    dead = [pid for pid, p in PLAYERS.items() if now() - p['seen'] > 6]
+    # generous window: browsers throttle timers hard in backgrounded tabs, and
+    # an alt-tabbed player shouldn't read as "left the game"
+    dead = [pid for pid, p in PLAYERS.items() if now() - p['seen'] > 65]
     for pid in dead:
         was_host = pid == HOST_PID
         del PLAYERS[pid]

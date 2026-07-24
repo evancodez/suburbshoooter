@@ -12,6 +12,7 @@ G.net = (function () {
     lobby: null,        // {players:[{id,name,team,host}], cfg:{botsA,botsB,diff}}
     code: '',
     onLobby: null, onStart: null, onClosed: null, onJoinFail: null,
+    onKicked: null, onBackToLobby: null,
   };
   const PREFIX = 'blockops-v1-';
   // PeerJS's default ICE list only has UDP TURN on :3478, which dies on
@@ -383,6 +384,14 @@ G.net = (function () {
         break;
       case 'died': if (N.isHost) hostHandleDied(msg); break;
       case 'end': if (!N.isHost && G.game) G.game.onNetEnd(msg.win, msg.wn); break;
+      case 'kicked': // host showed me the door
+        if (!N.isHost) {
+          const cb = N.onKicked;
+          N.leave(); // clears hostConn first, so the late close event is ignored
+          if (cb) cb();
+        }
+        break;
+      case 'btl': if (!N.isHost) backToLobbyLocal(); break; // host ended the match
     }
   }
   function relay(msg, fromConn) { if (N.isHost) bc(msg, fromConn); }
@@ -404,6 +413,35 @@ G.net = (function () {
     N.lobby.cfg[k] = v;
     pushLobby();
   };
+  N.kick = function (id) {
+    if (!N.isHost || !N.lobby || id === N.myId) return;
+    const p = N.lobby.players.find(p => p.id === id);
+    const conn = conns.find(c => c._pid === id);
+    if (conn) {
+      try { conn.send({ t: 'kicked' }); } catch (e) {}
+      conns = conns.filter(c => c !== conn);
+      // let the goodbye flush before dropping the pipe (LAN relay ticks at 60ms)
+      setTimeout(() => { try { conn.close ? conn.close() : conn._close && conn._close(); } catch (e) {} }, 400);
+    }
+    N.lobby.players = N.lobby.players.filter(p => p.id !== id);
+    removeRemote(id);
+    pushLobby();
+    if (N.active && G.game) G.game.chat('SYSTEM', ((p && p.name) || 'a player') + ' was kicked by the host', true);
+  };
+  // host ends the match for EVERYONE and returns the whole room to the lobby
+  N.backToLobby = function () {
+    if (!N.isHost || !N.lobby) return;
+    bc({ t: 'btl' });
+    backToLobbyLocal();
+  };
+  function backToLobbyLocal() {
+    N.active = false;
+    N.teamOverrides = null;
+    N.matchCfg = null;
+    N.clearCorpses();
+    syncRemotesToLobby();
+    if (N.onBackToLobby) N.onBackToLobby();
+  }
   N.setName = function (name) {
     name = String(name || '').trim().slice(0, 14);
     if (!name || name === N.myName) return;
@@ -433,7 +471,8 @@ G.net = (function () {
           if (N.active && G.game) G.game.chat('SYSTEM', (conn._name || 'a player') + ' left', true);
         }
       } else {
-        // host gone
+        // host gone — unless we already left on purpose (kicked / leave())
+        if (conn !== hostConn) return;
         N.active = false;
         if (N.onClosed) N.onClosed();
       }
@@ -444,7 +483,24 @@ G.net = (function () {
   // The local python server is a mailbox: we poll our inbox and post batches
   // addressed to the host / a player. Fake conn objects speak the same
   // interface as PeerJS DataConnections, so lobby + match code is unchanged.
-  let lanActive = false, lanTimer = null, lanBusy = false;
+  let lanActive = false, lanTimer = null, lanWorker = null, lanBusy = false;
+  // poll from a Worker: page timers in hidden tabs get throttled to as little
+  // as once a minute, the relay reaps us, and an alt-tabbed host reads as
+  // "left the game" to everyone else. Worker timers keep ticking.
+  function startLanTicker() {
+    stopLanTicker();
+    try {
+      const src = 'setInterval(() => postMessage(0), 60)';
+      lanWorker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      lanWorker.onmessage = lanTick;
+    } catch (e) {
+      lanTimer = setInterval(lanTick, 60); // worker blocked (CSP?): plain interval
+    }
+  }
+  function stopLanTicker() {
+    if (lanTimer) { clearInterval(lanTimer); lanTimer = null; }
+    if (lanWorker) { try { lanWorker.terminate(); } catch (e) {} lanWorker = null; }
+  }
   const lanOut = new Map(); // to -> [msgs]
   function lanQueue(to, msg) {
     if (!lanOut.has(to)) lanOut.set(to, []);
@@ -460,7 +516,7 @@ G.net = (function () {
   }
   function lanStop() {
     lanActive = false;
-    if (lanTimer) { clearInterval(lanTimer); lanTimer = null; }
+    stopLanTicker();
     lanOut.clear();
   }
   async function lanTick() {
@@ -527,7 +583,7 @@ G.net = (function () {
         N.lobby = { players: [{ id: N.myId, name, team: 0, host: true }], cfg: { mode: 'tdm', botsA: 0, botsB: 3, diff: 'normal', target: 30, mins: 10, map: 'suburbs' } };
         N.myTeam = 0;
         lanActive = true;
-        lanTimer = setInterval(lanTick, 60);
+        startLanTicker();
         cb && cb();
       })
       .catch(() => errCb && errCb('no local server — wifi games need the game run via  python3 serve.py'));
@@ -543,7 +599,7 @@ G.net = (function () {
         N.lanMode = true;
         N.lanInfo = d;
         lanActive = true;
-        lanTimer = setInterval(lanTick, 60);
+        startLanTicker();
       })
       .catch(() => {});
   };
@@ -560,7 +616,7 @@ G.net = (function () {
         hostConn = LanConn('host', 'host');
         wireConn(hostConn);
         lanActive = true;
-        lanTimer = setInterval(lanTick, 60);
+        startLanTicker();
         hostConn.send({ t: 'hello', name: N.myName, pid: N.myId });
         cb && cb();
       })

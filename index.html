@@ -276,6 +276,8 @@
   }
   .lplayer:hover { background: rgba(255,255,255,0.6); }
   .swapbtn { color: #777; font-size: 13px; }
+  .kickbtn { color: #e83333; font-size: 13px; font-weight: bold; padding: 0 3px; cursor: pointer; }
+  .kickbtn:hover { color: #fff; background: #e83333; border-radius: 4px; }
   .lbots { font-size: 13.5px; color: #555; font-weight: bold; margin-top: 4px; }
   .stepper { display: inline-flex; align-items: center; gap: 8px; font-weight: bold; }
   .numin {
@@ -362,6 +364,10 @@
           <button data-v="0" class="sel">OFF</button><button data-v="1">PS5 / GAMEPAD</button>
         </div>
         <div id="padStatus" style="font-size:12.5px; color:#667; margin-top:4px; max-width:340px"></div>
+        <h3>INVERT LOOK</h3>
+        <div class="btnrow" id="invertSel">
+          <button data-v="0" class="sel">OFF</button><button data-v="1">ON</button>
+        </div>
       </div>
       <div>
         <h3 style="margin-top:0">MULTIPLAYER — play with friends</h3>
@@ -378,6 +384,7 @@
         <div class="sliderrow">SENS <input type="range" id="sensSlider" min="0.2" max="3" step="0.05"><span class="val" id="sensSliderVal">1.00</span></div>
         <div class="sliderrow">VOL <input type="range" id="volSlider" min="0" max="1" step="0.05"><span class="val" id="volSliderVal">80%</span></div>
         <div class="sliderrow">FOV <input type="range" id="fovSlider" min="60" max="105" step="1"><span class="val" id="fovSliderVal">78°</span></div>
+        <div class="sliderrow">RUMBLE <input type="range" id="rumbleSlider" min="0" max="1.5" step="0.05"><span class="val" id="rumbleSliderVal">100%</span></div>
         <h3>CONTROLS</h3>
         <div class="controls" id="controlsList"></div>
       </div>
@@ -442,6 +449,18 @@
     <div class="sliderrow">SENS <input type="range" id="sensSlider2" min="0.2" max="3" step="0.05"><span class="val" id="sensSlider2Val">1.00</span></div>
     <div class="sliderrow">VOL <input type="range" id="volSlider2" min="0" max="1" step="0.05"><span class="val" id="volSlider2Val">80%</span></div>
     <div class="sliderrow">FOV <input type="range" id="fovSlider2" min="60" max="105" step="1"><span class="val" id="fovSlider2Val">78°</span></div>
+    <div class="sliderrow">RUMBLE <input type="range" id="rumbleSlider2" min="0" max="1.5" step="0.05"><span class="val" id="rumbleSlider2Val">100%</span></div>
+    <div class="mprow" style="margin-top:8px; flex-wrap:wrap; gap:6px 10px">
+      <div class="btnrow" id="layoutSel2">
+        <button data-v="1">1: MOUSE</button><button data-v="2">2: TOUCHPAD</button>
+      </div>
+      <div class="btnrow" id="padSel2">
+        <button data-v="0">PAD OFF</button><button data-v="1">PS5 / GAMEPAD</button>
+      </div>
+      <div class="btnrow" id="invertSel2">
+        <button data-v="0">INVERT OFF</button><button data-v="1">INVERT ON</button>
+      </div>
+    </div>
   </div>
   <div class="panel" id="pauseHost" style="display:none; max-width:560px">
     <h3>HOST CONTROLS</h3>
@@ -486,16 +505,16 @@
   </div>
 </div>
 
-<script src="js/three.min.js?v=3"></script>
-<script src="js/peerjs.min.js?v=3"></script>
-<script src="js/util.js?v=3"></script>
-<script src="js/textures.js?v=3"></script>
-<script src="js/audio.js?v=3"></script>
-<script src="js/effects.js?v=3"></script>
-<script src="js/world.js?v=3"></script>
-<script src="js/enemy.js?v=3"></script>
-<script src="js/weapons.js?v=3"></script>
-<script src="js/net.js?v=3"></script>
-<script src="js/main.js?v=3"></script>
+<script src="js/three.min.js?v=4"></script>
+<script src="js/peerjs.min.js?v=4"></script>
+<script src="js/util.js?v=4"></script>
+<script src="js/textures.js?v=4"></script>
+<script src="js/audio.js?v=4"></script>
+<script src="js/effects.js?v=4"></script>
+<script src="js/world.js?v=4"></script>
+<script src="js/enemy.js?v=4"></script>
+<script src="js/weapons.js?v=4"></script>
+<script src="js/net.js?v=4"></script>
+<script src="js/main.js?v=4"></script>
 </body>
 </html>

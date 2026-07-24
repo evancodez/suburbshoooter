@@ -3,7 +3,7 @@
   const $ = (id) => document.getElementById(id);
 
   // ---------- settings ----------
-  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, botsAlly: 3, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs', layout: 1, mode: 'vsworld' };
+  const settings = { sens: 1.0, vol: 0.8, fov: 78, bots: 6, botsAlly: 3, diff: 'normal', name: '', target: 30, mins: 10, map: 'suburbs', layout: 1, mode: 'vsworld', rumble: 1, invertY: false };
   try {
     const s = JSON.parse(localStorage.getItem('blockops_settings') || '{}');
     Object.assign(settings, s);
@@ -108,6 +108,7 @@
     if (e.code === 'Digit6') G.arsenal.switchTo('smg');
     if (e.code === 'Digit7') G.arsenal.switchTo('dmr');
     if (e.code === 'Digit8') G.arsenal.switchTo('lmg');
+    if (e.code === 'KeyQ') G.arsenal.quickSwap();
     if (e.code === 'KeyT') G.arsenal.callAirstrike();
   });
   document.addEventListener('keyup', (e) => {
@@ -134,7 +135,7 @@
     const scopeK = G.arsenal.isScoped() ? (G.arsenal.currentId === 'dmr' ? 0.55 : 0.3) : 1;
     const s = settings.sens * 0.0021 * scopeK;
     player.yaw -= e.movementX * s;
-    player.pitch -= e.movementY * s;
+    player.pitch -= e.movementY * s * (settings.invertY ? -1 : 1);
     player.pitch = U.clamp(player.pitch, -1.51, 1.51);
     game.lookDX = e.movementX; game.lookDY = e.movementY;
   });
@@ -208,7 +209,7 @@
       const lx = padCurve(gp.axes[2] || 0), ly = padCurve(gp.axes[3] || 0);
       if (lx || ly) {
         player.yaw -= lx * rate * dt;
-        player.pitch = U.clamp(player.pitch - ly * rate * dt, -1.51, 1.51);
+        player.pitch = U.clamp(player.pitch - ly * rate * dt * (settings.invertY ? -1 : 1), -1.51, 1.51);
         game.lookDX = lx * 14; game.lookDY = ly * 14;
       }
       // triggers
@@ -251,10 +252,12 @@
   //       lt / rt (0..1 trigger actuator kick, used where supported)
   G.rumble = function (strong, weak, ms, opts) {
     if (!settings.gamepad) return;
+    const mul = settings.rumble === undefined ? 1 : settings.rumble; // user rumble strength (0–150%)
+    if (mul <= 0) return;
     opts = opts || {};
     haptics.pulses.push({
-      s: Math.min(1, strong || 0), w: Math.min(1, weak || 0),
-      lt: Math.min(1, opts.lt || 0), rt: Math.min(1, opts.rt || 0),
+      s: Math.min(1, (strong || 0) * mul), w: Math.min(1, (weak || 0) * mul),
+      lt: Math.min(1, (opts.lt || 0) * mul), rt: Math.min(1, (opts.rt || 0) * mul),
       t: 0, dur: Math.max(0.03, (ms || 60) / 1000),
       decay: opts.decay !== undefined ? opts.decay : 1.6,
       delay: opts.delay || 0,
@@ -311,7 +314,12 @@
   // host-only mid-match controls on the pause screen
   function renderPauseHost() {
     const N = G.net;
-    const on = N && N.active && N.isHost && N.lobby;
+    const mp = N && N.active && N.lobby;
+    // in multiplayer, "restart" means ending the match for the whole room —
+    // that's the host's call; clients get RESUME / MAIN MENU only
+    $('restartBtn').textContent = mp ? 'BACK TO LOBBY' : 'RESTART';
+    $('restartBtn').style.display = (mp && !N.isHost) ? 'none' : '';
+    const on = mp && N.isHost;
     $('pauseHost').style.display = on ? '' : 'none';
     if (!on) return;
     const ffa = N.matchCfg && (N.matchCfg.mode === 'ffa' || N.matchCfg.mode === 'gun');
@@ -324,9 +332,15 @@
     if (document.activeElement !== $('pBotsB')) $('pBotsB').value = ffa ? 0 : N.lobby.cfg.botsB;
     let html = '';
     for (const p of N.lobby.players) {
-      html += `<span class="lplayer" style="display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:6px; background:${ffa ? '#eee' : p.team === 0 ? '#dcf5dc' : '#f8ded8'}" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${ffa ? '' : ' ⇄'}</span>`;
+      html += `<span class="lplayer" style="display:inline-block; margin:2px 6px 2px 0; padding:2px 8px; border-radius:6px; background:${ffa ? '#eee' : p.team === 0 ? '#dcf5dc' : '#f8ded8'}" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${ffa ? '' : ' ⇄'}${p.host ? '' : ' <span class="kickbtn" title="kick">✕</span>'}</span>`;
     }
     $('pausePlayers').innerHTML = html;
+    $('pausePlayers').querySelectorAll('.kickbtn').forEach(el => {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation(); // don't also swap their team on the way out
+        N.kick(el.closest('.lplayer').dataset.id);
+      });
+    });
     if (!ffa) $('pausePlayers').querySelectorAll('.lplayer').forEach(el => {
       el.addEventListener('click', () => {
         const p = N.lobby.players.find(q => q.id === el.dataset.id);
@@ -1416,26 +1430,36 @@
       ['MOUSE', 'aim · LMB fire'], [L2 ? 'SHIFT' : 'RMB', 'aim down sights'],
       ['SPACE', 'jump / climb ladders'], [L2 ? 'C' : 'SHIFT / C', 'crouch (+sprint = slide)'],
       [L2 ? 'E' : 'G', 'grenade'], ['F', 'knife'],
-      ['R', 'reload'], ['1-8 · WHEEL', 'weapons'],
+      ['R', 'reload'], ['1-8 · WHEEL', 'weapons'], ['Q', 'last weapon'],
       ['T', 'airstrike (5 streak)'], ['ESC', 'pause'],
     ];
     $('controlsList').innerHTML = rows.map(([k, txt]) => `<div><span class="key">${k}</span>${txt}</div>`).join('');
   }
-  $('layoutSel').addEventListener('click', (e) => {
+  // control-scheme pickers live on the main menu AND the pause screen (so
+  // multiplayer clients can change theirs mid-match); this keeps both in sync
+  function syncControlUI() {
+    const lay = settings.layout || 1;
+    document.querySelectorAll('#layoutSel button, #layoutSel2 button').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.v) === lay));
+    document.querySelectorAll('#padSel button, #padSel2 button').forEach(b => b.classList.toggle('sel', (b.dataset.v === '1') === !!settings.gamepad));
+    document.querySelectorAll('#invertSel button, #invertSel2 button').forEach(b => b.classList.toggle('sel', (b.dataset.v === '1') === !!settings.invertY));
+  }
+  for (const id of ['layoutSel', 'layoutSel2']) $(id).addEventListener('click', (e) => {
     const b = e.target.closest('button');
-    if (b) { settings.layout = parseInt(b.dataset.v); saveSettings(); renderControls(); }
+    if (b) { settings.layout = parseInt(b.dataset.v); saveSettings(); renderControls(); syncControlUI(); }
   });
-  document.querySelectorAll('#layoutSel button').forEach(b => b.classList.toggle('sel', parseInt(b.dataset.v) === (settings.layout || 1)));
-  if (!document.querySelector('#layoutSel .sel')) document.querySelector('#layoutSel button[data-v="1"]').classList.add('sel');
-  $('padSel').addEventListener('click', (e) => {
+  for (const id of ['padSel', 'padSel2']) $(id).addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     settings.gamepad = b.dataset.v === '1';
     saveSettings();
-    document.querySelectorAll('#padSel button').forEach(x => x.classList.toggle('sel', x === b));
+    syncControlUI();
     updatePadUI();
   });
-  document.querySelectorAll('#padSel button').forEach(b => b.classList.toggle('sel', (b.dataset.v === '1') === !!settings.gamepad));
+  for (const id of ['invertSel', 'invertSel2']) $(id).addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (b) { settings.invertY = b.dataset.v === '1'; saveSettings(); syncControlUI(); }
+  });
+  syncControlUI();
   updatePadUI();
   renderControls();
   // preselect from settings
@@ -1469,6 +1493,8 @@
   bindSlider('sensSlider2', 'sens', v => v.toFixed(2));
   bindSlider('volSlider2', 'vol', v => Math.round(v * 100) + '%');
   bindSlider('fovSlider2', 'fov', v => Math.round(v) + '°');
+  bindSlider('rumbleSlider', 'rumble', v => Math.round(v * 100) + '%');
+  bindSlider('rumbleSlider2', 'rumble', v => Math.round(v * 100) + '%');
 
   $('deployBtn').addEventListener('click', startSolo);
   $('resumeBtn').addEventListener('click', () => {
@@ -1477,7 +1503,10 @@
     lockPointer();
   });
   $('restartBtn').addEventListener('click', () => {
-    if (G.net && G.net.lobby) { $('pause').style.display = 'none'; showLobby(); }
+    // multiplayer host: end the match for everyone and bring the room back to
+    // the lobby (clients never see this button — they can't end the match)
+    if (G.net && G.net.active && G.net.isHost) { $('pause').style.display = 'none'; G.net.backToLobby(); }
+    else if (G.net && G.net.lobby) { $('pause').style.display = 'none'; showLobby(); }
     else startSolo();
   });
   $('menuBtn').addEventListener('click', () => {
@@ -1487,7 +1516,9 @@
     $('menu').style.display = 'flex';
   });
   $('againBtn').addEventListener('click', () => {
-    if (G.net && G.net.lobby) showLobby();
+    // host: pull everyone back together so the next match starts as a group
+    if (G.net && G.net.lobby && G.net.isHost && G.net.active) G.net.backToLobby();
+    else if (G.net && G.net.lobby) showLobby();
     else startSolo();
   });
   $('endMenuBtn').addEventListener('click', () => {
@@ -1534,17 +1565,18 @@
     const ffa = mode === 'ffa' || mode === 'gun';
     // players grouped by team (or one big pile in free-for-all)
     let html = '';
+    const kickHtml = (p) => (isHost && !p.host) ? ' <span class="kickbtn" title="kick">✕</span>' : '';
     if (ffa) {
       html += `<div class="teamcol"><h3>PLAYERS — EVERYONE FOR THEMSELVES</h3>`;
       for (const p of N.lobby.players) {
-        html += `<div class="lplayer">${esc(p.name)}${p.host ? ' ★' : ''}</div>`;
+        html += `<div class="lplayer" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${kickHtml(p)}</div>`;
       }
       const bots = (N.lobby.cfg.botsA || 0) + (N.lobby.cfg.botsB || 0);
       html += `<div class="lbots">+ ${bots} bot${bots === 1 ? '' : 's'}</div></div>`;
     } else for (const team of [0, 1]) {
       html += `<div class="teamcol team${team}"><h3>${team === 0 ? 'GREEN TEAM' : 'RED TEAM'}</h3>`;
       for (const p of N.lobby.players.filter(p => p.team === team)) {
-        html += `<div class="lplayer" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${isHost ? ' <span class="swapbtn">⇄</span>' : ''}</div>`;
+        html += `<div class="lplayer" data-id="${esc(p.id)}">${esc(p.name)}${p.host ? ' ★' : ''}${isHost ? ' <span class="swapbtn">⇄</span>' : ''}${kickHtml(p)}</div>`;
       }
       const bots = team === 0 ? N.lobby.cfg.botsA : N.lobby.cfg.botsB;
       html += `<div class="lbots">+ ${bots} bot${bots === 1 ? '' : 's'}</div></div>`;
@@ -1555,6 +1587,14 @@
         el.addEventListener('click', () => {
           const p = N.lobby.players.find(q => q.id === el.dataset.id);
           if (p) N.setTeam(p.id, 1 - p.team);
+        });
+      });
+    }
+    if (isHost) {
+      $('lobbyPlayers').querySelectorAll('.kickbtn').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation(); // kick shouldn't also team-swap the row
+          N.kick(el.closest('.lplayer').dataset.id);
         });
       });
     }
@@ -1684,6 +1724,16 @@
     };
     G.net.onStart = startNetMatch;
     G.net.onJoinFail = netError;
+    G.net.onBackToLobby = () => { // host ended the match: whole room regroups
+      showLobby();
+    };
+    G.net.onKicked = () => {
+      game.state = 'menu'; game.paused = false;
+      clearMatchScreens();
+      $('lobby').style.display = 'none';
+      $('menu').style.display = 'flex';
+      netError('the host removed you from the game');
+    };
     G.net.onClosed = () => {
       game.banner && game.banner('HOST LEFT THE GAME', '#ff5544');
       G.net.leave();

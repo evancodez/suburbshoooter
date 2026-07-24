@@ -210,6 +210,7 @@ G.arsenal = (function () {
     for (const b of A.bombs) G.scene.remove(b.mesh);
     A.bombs.length = 0;
     bloom = 0; adsT = 0; reloadT = 0; switchT = 0; fireCd = 0; meleeT = -1;
+    A.prevId = null; // fresh match: no gun to quick-swap back to yet
     A.switchTo('ar', true);
   };
   A.def = () => DEFS[A.currentId];
@@ -239,10 +240,10 @@ G.arsenal = (function () {
   // [strong, weak, ms] — kick tracks the gun's actual punch. Heavies lean on the
   // low-freq motor (chest thump), fast guns on the high-freq one (hand buzz), so
   // an SMG feels like a rattle and the shotgun feels like a slam even at the same
-  // nominal strength. Durations stay short: crisp per-shot kicks, no mush.
+  // nominal strength. Front-loaded decay keeps full-auto reading as distinct hits.
   const FIRE_RUMBLE = {
-    sg: [1.0, 0.45, 140], sr: [1.0, 0.7, 170], rl: [1.0, 0.9, 240], lmg: [0.6, 0.35, 75],
-    rev: [0.85, 0.4, 110], dmr: [0.7, 0.45, 95], smg: [0.14, 0.32, 45], ar: [0.38, 0.3, 60],
+    sg: [1.0, 0.6, 180], sr: [1.0, 0.8, 210], rl: [1.0, 1.0, 300], lmg: [0.8, 0.5, 100],
+    rev: [1.0, 0.55, 150], dmr: [0.9, 0.6, 130], smg: [0.3, 0.55, 70], ar: [0.6, 0.45, 90],
   };
   A.adsDown = function () {
     adsHeld = true;
@@ -250,9 +251,11 @@ G.arsenal = (function () {
   };
   A.adsUp = function () { adsHeld = false; };
   A.lockSwitch = false; // gun game: the ladder decides your weapon, not you
+  A.prevId = null;      // the gun you were holding before this one (Q quick-swap)
   A.switchTo = function (id, instant) {
     if (!DEFS[id] || (id === A.currentId && !instant)) return;
     if (A.lockSwitch && !instant) return;
+    A.prevId = A.currentId;
     if (instant) {
       models[A.currentId].visible = false;
       A.currentId = id;
@@ -271,6 +274,12 @@ G.arsenal = (function () {
     if (A.lockSwitch) return;
     const i = ORDER.indexOf(A.currentId);
     A.switchTo(ORDER[(i + d + ORDER.length) % ORDER.length]);
+  };
+  // Q: snap back to the last gun you held (CoD-style), any control layout
+  A.quickSwap = function () {
+    if (A.lockSwitch) return;
+    if (A.prevId && DEFS[A.prevId] && A.prevId !== A.currentId) A.switchTo(A.prevId);
+    else A.cycle(1); // fresh spawn, nothing to swap back to: next gun
   };
   // gun game tier-up: hand over the next rung fully loaded
   A.gunTier = function (id) {
