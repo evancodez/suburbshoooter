@@ -238,6 +238,20 @@
     padPrevB = [];
     for (let i = 0; i < b.length; i++) padPrevB.push(!!(b[i] && b[i].pressed));
   }
+  // controller haptics: strong motor = thump, weak motor = buzz
+  G.rumble = function (strong, weak, ms) {
+    if (!settings.gamepad) return;
+    const gp = activePad();
+    const va = gp && gp.vibrationActuator;
+    if (va && va.playEffect) {
+      try {
+        const p = va.playEffect('dual-rumble', {
+          duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak),
+        });
+        if (p && p.catch) p.catch(() => {});
+      } catch (err) {}
+    }
+  };
   function updatePadUI() {
     const el = document.getElementById('padStatus');
     if (!el) return;
@@ -282,6 +296,7 @@
     player.spawnProtectT -= dt;
     if (!player.alive) return;
 
+    if (player.wantStopSprint) { sprintLatch = false; player.wantStopSprint = false; } // ADS cancels sprint
     const sprintKey = sprintLatch && keys.KeyW; // double-tap W, keep holding
     const crouchKey = keys.KeyC || keys.ControlLeft ||
       ((settings.layout || 1) === 1 && (keys.ShiftLeft || keys.ShiftRight)); // L2: Shift is ADS instead
@@ -541,6 +556,7 @@
     player.regenT = 0;
     game.dmgA = Math.min(1, game.dmgA + dmg / 55);
     G.audio.hurt();
+    if (G.rumble) G.rumble(Math.min(1, 0.35 + dmg * 0.018), 0.4, 190);
     // direction indicator
     if (fromPos) {
       const bearing = Math.atan2(fromPos.x - player.pos.x, fromPos.z - player.pos.z);

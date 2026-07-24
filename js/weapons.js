@@ -7,7 +7,7 @@ G.arsenal = (function () {
     ar: { name: 'M4 RATTLER', kind: 'ar', auto: true, interval: 0.088, dmg: 26, headMul: 2.3, mag: 45, reserve: 225,
           spread: 1.15, bloomPer: 0.62, bloomMax: 4.2, adsMul: 0.32, recoil: 1.35, chunkDmg: 15, reload: 1.9, pellets: 1,
           falloff: 95, falloffStart: 24, falloffFloor: 0.55 },
-    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.78, dmg: 15, headMul: 1.35, mag: 10, reserve: 40,
+    sg:  { name: 'STREET SWEEPER', kind: 'sg', auto: true, interval: 0.78, dmg: 16, headMul: 1.35, mag: 10, reserve: 40,
           spread: 4.1, bloomPer: 0, bloomMax: 5, adsMul: 0.7, recoil: 2.9, chunkDmg: 9, reload: 2.5, pellets: 8,
           falloff: 34, falloffStart: 8.5, falloffFloor: 0.38 },
     sr:  { name: 'CURB APPEAL .50', kind: 'sr', auto: true, interval: 1.2, dmg: 88, headMul: 2.3, mag: 5, reserve: 25,
@@ -236,7 +236,14 @@ G.arsenal = (function () {
   // ---------- input ----------
   A.fireDown = function () { fireHeld = true; };
   A.fireUp = function () { fireHeld = false; };
-  A.adsDown = function () { adsHeld = true; };
+  const FIRE_RUMBLE = {
+    sg: [1.0, 0.55, 100], sr: [1.0, 0.6, 110], rl: [0.9, 0.8, 150], lmg: [0.55, 0.35, 55],
+    rev: [0.75, 0.4, 80], dmr: [0.65, 0.4, 75], smg: [0.28, 0.18, 40], ar: [0.4, 0.25, 45],
+  };
+  A.adsDown = function () {
+    adsHeld = true;
+    G.player.wantStopSprint = true; // aiming overrides the sprint, not the other way round
+  };
   A.adsUp = function () { adsHeld = false; };
   A.lockSwitch = false; // gun game: the ladder decides your weapon, not you
   A.switchTo = function (id, instant) {
@@ -351,14 +358,18 @@ G.arsenal = (function () {
     }
     // fx + noise
     muzzleNode.getWorldPosition(tmpV);
-    G.fx.muzzle(tmpV, A.currentId === 'sg' ? 0.95 : 0.4);
-    if (A.currentId === 'sg') G.fx.shake(0.16, 0.1); // the boom you feel in your chest
+    G.fx.muzzle(tmpV, A.currentId === 'sg' ? 1.1 : 0.4);
+    if (A.currentId === 'sg') G.fx.shake(0.22, 0.13); // the boom you feel in your chest
     muzzleFlashT = 0.05;
     G.audio.shot(def.kind, null);
+    if (G.rumble) { // per-weapon controller rumble: heavies thump, smgs buzz
+      const rr = FIRE_RUMBLE[A.currentId] || FIRE_RUMBLE.ar;
+      G.rumble(rr[0], rr[1], rr[2]);
+    }
     G.botMgr.onNoise(G.player.pos, 48);
     G.game.markPlayerRadar();
-    // recoil
-    kickZ = Math.min(kickZ + 0.045 * def.recoil, 0.14);
+    // recoil (the shotgun kicks the viewmodel harder than anything else)
+    kickZ = Math.min(kickZ + 0.045 * def.recoil, A.currentId === 'sg' ? 0.2 : 0.14);
     kickRot = Math.min(kickRot + 0.06 * def.recoil, 0.2);
     G.game.addRecoil(0.0042 * def.recoil, U.rand(-0.0012, 0.0012) * def.recoil);
     G.fx.shake(0.14 * def.recoil, 0.12);
@@ -435,6 +446,7 @@ G.arsenal = (function () {
     tmpV2.y += 4.5;
     A.spawnNade(tmpV, tmpV2, 'player');
     G.audio.click();
+    if (G.rumble) G.rumble(0.3, 0.2, 50);
     kickZ += 0.05;
   };
   function updateNades(dt) {
@@ -578,6 +590,7 @@ G.arsenal = (function () {
     meleeCd = 0.6;
     meleeT = 0;
     G.audio.melee();
+    if (G.rumble) G.rumble(0.5, 0.3, 60);
     camera.getWorldDirection(camFwd);
     rayO.copy(camera.position);
     const hit = G.world.raycast(rayO, camFwd, 2.3, { bots: true, remotes: true, skipTeam: G.player.team });

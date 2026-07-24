@@ -572,6 +572,9 @@ G.fx = (function () {
   };
 
   FX.shake = function (amp, dur) {
+    // big shakes (explosions, collapses, rocket launches) hit the controller too;
+    // per-shot recoil shakes stay below the bar — weapons rumble on their own
+    if (amp >= 0.5 && G.rumble) G.rumble(Math.min(1, amp * 0.55), Math.min(1, amp * 0.4), Math.min(320, 90 + dur * 250));
     if (amp > shakeAmp) { shakeAmp = amp; shakeDur = dur; shakeT = 0; }
   };
   FX.getShake = function (out, dt) {
