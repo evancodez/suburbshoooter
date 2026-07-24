@@ -29,6 +29,9 @@ G.world = (function () {
     banner: 250, brazier: 400, feast: 900, stall: 350, dummy: 150, rack: 700, tomb: 500,
     pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
     castle: 180, book: 45,
+    // arcane academy
+    cauldron: 380, crystal: 4200, orrery: 7500, mirror: 2800, potion: 60, scroll: 35,
+    telescope: 3200, portrait: 1500, broom: 900, pumpkin: 25, owl: 350, harp: 2600,
     // gold rush gulch
     wood: 30, tnt: 40, loco: 28000, boxcar: 6000, trestle: 60, orecart: 380, piano: 4200,
     keg: 90, wagon: 1500, hay: 25, cactus: 900, bell: 7000, windmill: 2400, trough: 120,
@@ -1196,6 +1199,38 @@ G.world = (function () {
       G.game.chat('HERALD', U.pick(['the royal colors!! have you no shame', 'that banner survived three sieges. until you.']));
     } else if (prop.kind === 'feast' && G.game && Math.random() < 0.5) {
       G.game.chat('HERALD', U.pick(['the FEAST. the king waited all winter for that', 'not the roast boar!!']));
+    } else if (prop.kind === 'cauldron') {
+      // an unattended brew does NOT appreciate gunfire
+      tmpV.set(prop.x, prop.y, prop.z);
+      W.explode(tmpV, 5.2, 110, { attacker, tag: 'CAULDRON' });
+      if (G.game && Math.random() < 0.5) G.game.chat('POTIONS MASTER', 'that brew had three weeks left to simmer!!');
+    } else if (prop.kind === 'crystal') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      tmpN.set(0, 1, 0);
+      G.fx.glassBreak(tmpV, tmpN);
+      W.explode(tmpV, 4.2, 85, { attacker, tag: 'WILD MAGIC' });
+    } else if (prop.kind === 'orrery') {
+      if (W._orrerySpin) {
+        if (W._orrerySpin.parent) W._orrerySpin.parent.remove(W._orrerySpin);
+        W._orrerySpin = null;
+      }
+      G.fx.shake(0.5, 0.4);
+      if (G.game) G.game.chat('ASTRONOMY DEPT.', 'four centuries of planetary alignment. gone.');
+    } else if (prop.kind === 'portrait' && G.game && Math.random() < 0.7) {
+      G.game.chat('THE PORTRAIT', U.pick(['how RUDE.', 'i was IN that painting!!', 'you could have knocked']));
+    } else if (prop.kind === 'mirror') {
+      tmpV.set(prop.x, prop.y, prop.z);
+      tmpN.set(0, 0, 1);
+      G.fx.glassBreak(tmpV, tmpN);
+      if (G.game && Math.random() < 0.6) G.game.chat('THE MIRROR', 'seven years bad luck. minimum.');
+    } else if (prop.kind === 'owl' && G.game && Math.random() < 0.5) {
+      G.game.chat('OWLERY', 'the mail is going to be SO late');
+    } else if (prop.kind === 'pumpkin' && G.game && Math.random() < 0.3) {
+      G.game.chat('GROUNDSKEEPER', 'me prize pumpkin!!');
+    } else if (prop.kind === 'hoop' && W._hoopRings && W._hoopRings.get(prop)) {
+      const ring = W._hoopRings.get(prop); // the golden ring falls with its post
+      if (ring.parent) ring.parent.remove(ring);
+      W._hoopRings.delete(prop);
     } else if (prop.kind === 'tomb' && G.game && Math.random() < 0.5) {
       G.game.chat('GRAVEKEEPER', U.pick(['show some RESPECT', 'he was resting!!', 'that plot was paid through eternity']));
     } else if (prop.kind === 'dummy' && G.game && Math.random() < 0.4) {
@@ -1904,7 +1939,7 @@ G.world = (function () {
     { id: 'island', name: 'VOLCANO ISLAND' },
     { id: 'station', name: 'MERIDIAN STATION' },
     { id: 'gulch', name: 'GOLD RUSH GULCH' },
-    { id: 'citadel', name: 'THE CITADEL' },
+    { id: 'citadel', name: 'ARCANE ACADEMY' },
   ];
   W.mapUpdate = null;
   W.minimapPaint = null;
@@ -3296,35 +3331,40 @@ G.world = (function () {
   // and a bell tower crowning it all. Nearly everything breaks; the foundations,
   // column plinths, hearths and fountain never do — cover survives the siege.
   function buildCitadelMap() {
-    W.bounds = { x: 66, z: 54 };
-    W.teamSpawns = [{ x: 0, z: 48 }, { x: 0, z: -48 }];
+    // ================= ARCANE ACADEMY =================
+    // a wizard school under a twilight sky: great hall with floating candles,
+    // a library hiding a bookshelf passage, potions dungeon under the whole
+    // castle, an astronomy tower, a long covered bridge, glass greenhouse,
+    // owlery, and a gatehouse. Everything that isn't floor is breakable.
+    W.bounds = { x: 62, z: 52 };
+    W.teamSpawns = [{ x: 0, z: 46 }, { x: 0, z: -46 }];
+    W._hoopRings = new Map();
 
     // grounds
     plane(440, 440, T.grass(), 0, -0.01, 0).material.map.repeat.set(60, 60);
-    plane(7, 26, T.dirt(), 0, 0.02, 35).material.map.repeat.set(1, 4);
-    plane(5, 14, T.dirt(), 0, 0.02, -46).material.map.repeat.set(1, 2);
-    const cobble = plane(32, 26, T.sidewalk(), 0, 0.02, 6);
-    cobble.material.map.repeat.set(8, 6);
-    cobble.material.color = new THREE.Color(0xcfc2a8);
-    const crypt = plane(88, 32, T.gravel(), 0, 0.03, -24); // undercroft floor: worn flagstone
-    crypt.material.map.repeat.set(22, 8);
-    crypt.material.color = new THREE.Color(0x8a8378);
-    const alley = plane(88, 2.2, T.gravel(), 0, 0.025, -7); // the front alley
-    alley.material.map.repeat.set(22, 1);
-    alley.material.color = new THREE.Color(0x9a9184);
+    const court = plane(36, 36, T.sidewalk(), 0, 0.02, 8);
+    court.material.map.repeat.set(9, 9);
+    court.material.color = new THREE.Color(0xc9bda6);
+    const path = plane(7, 22, T.sidewalk(), 0, 0.015, 33); // gate → courtyard
+    path.material.map.repeat.set(2, 5);
+    path.material.color = new THREE.Color(0xbfb49e);
+    const dung = plane(80, 28, T.gravel(), 0, 0.03, -24); // dungeon flagstone
+    dung.material.map.repeat.set(20, 7);
+    dung.material.color = new THREE.Color(0x84796c);
+    plane(6, 10, T.dirt(), 0, 0.02, -43).material.map.repeat.set(1, 2);
 
     // realm limits
-    addCollider(-72, 0, -58, -66.4, 26, 58, { noShoot: true });
-    addCollider(66.4, 0, -58, 72, 26, 58, { noShoot: true });
-    addCollider(-72, 0, -58, 72, 26, -54.4, { noShoot: true });
-    addCollider(-72, 0, 54.4, 72, 26, 58, { noShoot: true });
+    addCollider(-68, 0, -58, -62.4, 30, 58, { noShoot: true });
+    addCollider(62.4, 0, -58, 68, 30, 58, { noShoot: true });
+    addCollider(-68, 0, -58, 68, 30, -52.4, { noShoot: true });
+    addCollider(-68, 0, 52.4, 68, 30, 58, { noShoot: true });
 
     // ---- helpers ----
     const CAS = (o, dir, cols, rows, fn, tint, hp) => {
       const wl = WallGrid({ ox: o.ox, oy: o.oy === undefined ? 0 : o.oy, oz: o.oz, dir, cols, rows, cw: 1, ch: 0.72, th: 0.36, kind: 'castle', tint: tint || 0xb8b2a6, hp: hp || 62, house: null });
       wallFill(wl, fn || (() => 0));
     };
-    const stoneG = [], ironG = [], organG = [];
+    const stoneG = [], ironG = [], goldG = [];
     function sdeck(cx, cz, w, d, topY, thick) {
       thick = thick || 0.28;
       const g = U.shadedBoxGeo(w, thick, d);
@@ -3340,7 +3380,6 @@ G.world = (function () {
       addCollider(x0, y0, z0, x1, y1, z1, plain ? {} : { step: true });
       slabs.push({ minx: x0, minz: z0, maxx: x1, maxz: z1, top: y1 });
     }
-    // fire, the honest medieval kind — flame sprites that flicker, no sun halos
     const flameTex = T.flame();
     const flames = [];
     function flame(x, y, z, s) {
@@ -3351,7 +3390,7 @@ G.world = (function () {
       grp.add(sp);
       flames.push(sp);
     }
-    function torch(x, y, z) { // iron wall bracket + flame
+    function torch(x, y, z) {
       const g = U.shadedBoxGeo(0.12, 0.45, 0.12);
       g.translate(x, y - 0.2, z);
       ironG.push(g);
@@ -3361,531 +3400,598 @@ G.world = (function () {
       addProp('candle', x, y, z, 0.14, 0.32, 0.14, T.plain, 0xe8e0cc, 5, { noWalk: true });
       flame(x, y + 0.5, z, 0.24);
     }
-    function hearth(cx, cz, alongZ, sign) { // indestructible fireplace against a wall
-      const j = 0.62, dep = 0.65, hy0 = alongZ ? 2.9 : 0, top = hy0 + 2.2;
-      if (alongZ) { // faces +x (library, west wall)
-        sblock(cx, hy0, cz - 1.75, cx + dep, top, cz - 1.75 + j, true);
-        sblock(cx, hy0, cz + 1.75 - j, cx + dep, top, cz + 1.75, true);
-        sblock(cx, top, cz - 1.75, cx + dep, top + 0.55, cz + 1.75, true);
-        flame(cx + 0.33, hy0 + 0.85, cz, 1.05);
-      } else { // faces -x (kitchen, east wall)
-        sblock(cx - dep, hy0, cz - 1.75, cx, top, cz - 1.75 + j, true);
-        sblock(cx - dep, hy0, cz + 1.75 - j, cx, top, cz + 1.75, true);
-        sblock(cx - dep, top, cz - 1.75, cx, top + 0.55, cz + 1.75, true);
-        flame(cx - 0.33, hy0 + 0.85, cz, 1.05);
-      }
+    // the hogwarts trick: candles that just... hang there. and drift.
+    const floaters = [];
+    const candleMat = new THREE.MeshBasicMaterial({ map: T.plain(), color: 0xf2ead2 });
+    function floatCandle(x, y, z) {
+      const m = new THREE.Mesh(U.shadedBoxGeo(0.15, 0.46, 0.15), candleMat);
+      m.position.set(x, y, z);
+      grp.add(m);
+      flame(x, y + 0.44, z, 0.3);
+      floaters.push({ m, f: flames[flames.length - 1], y0: y, ph: x * 1.7 + z * 0.9 });
     }
-
-    // ================= THE PODIUM & UNDERCROFT =================
-    // solid indestructible foundations, tunnels carved through them
-    // voids: spine x -38..38 z -25..-22 | crossW x -21..-18 z -22..-8 | crossE x 18..21
-    //        postern x -1.5..1.5 z -40..-25 | treasury x -9..9 z -36..-28 (+gate slot x -2..2 z -28..-25)
-    //        cellar x -40..-24 z -36..-14 | crypt x 24..40 z -36..-14
-    sblock(-44, 0, -40, -1.5, 2.9, -36, true); sblock(1.5, 0, -40, 44, 2.9, -36, true);
-    sblock(-44, 0, -36, -40, 2.9, -28, true); sblock(-24, 0, -36, -9, 2.9, -28, true);
-    sblock(9, 0, -36, 24, 2.9, -28, true); sblock(40, 0, -36, 44, 2.9, -28, true);
-    sblock(-44, 0, -28, -40, 2.9, -25, true); sblock(-24, 0, -28, -2, 2.9, -25, true);
-    sblock(2, 0, -28, 24, 2.9, -25, true); sblock(40, 0, -28, 44, 2.9, -25, true);
-    sblock(-44, 0, -25, -38, 2.9, -22, true); sblock(38, 0, -25, 44, 2.9, -22, true);
-    sblock(-44, 0, -22, -40, 2.9, -14, true); sblock(-24, 0, -22, -21, 2.9, -14, true);
-    sblock(-18, 0, -22, 18, 2.9, -14, true); sblock(21, 0, -22, 24, 2.9, -14, true);
-    sblock(40, 0, -22, 44, 2.9, -14, true);
-    sblock(-44, 0, -14, -21, 2.9, -8, true); sblock(-18, 0, -14, 18, 2.9, -8, true);
-    sblock(21, 0, -14, 44, 2.9, -8, true);
-    // podium floor (holes: dais stair, cellar ladder, crypt ladder)
-    sdeck(0, -36.7, 88, 6.6, 2.9, 0.3);                              // z -40..-33.4
-    sdeck(-22.65, -31.1, 42.7, 4.6, 2.9, 0.3);                       // z -33.4..-28.8 west of dais hole
-    sdeck(22.65, -31.1, 42.7, 4.6, 2.9, 0.3);                        // east of dais hole
-    sdeck(0, -22.65, 88, 12.3, 2.9, 0.3);                            // z -28.8..-16.5
-    sdeck(-41.95, -15.2, 4.1, 2.6, 2.9, 0.3);                        // z -16.5..-13.9 strips
-    sdeck(0, -15.2, 77, 2.6, 2.9, 0.3);
-    sdeck(41.95, -15.2, 4.1, 2.6, 2.9, 0.3);
-    sdeck(0, -10.95, 88, 5.9, 2.9, 0.3);                             // z -13.9..-8
-    // undercroft dressing
-    addLadder(-39.2, -15, 0, 2.9, 's');                              // cellar → library floor
-    addLadder(39.2, -15, 0, 2.9, 's');                               // crypt → chapel floor
-    sdeck(-39.2, -16.0, 1.4, 1.0, 2.9, 0.3);                         // hatch backstops: no falling
-    sdeck(39.2, -16.0, 1.4, 1.0, 2.9, 0.3);                          // through your own hole
-    buildStairs(0, -29.2, 0, -1, 2.4, 8, 0.37, 0.5, 0);              // treasury → behind the dais
-    const tGate = WallGrid({ ox: -2, oy: 0, oz: -26.5, dir: 'x', cols: 4, rows: 4, cw: 1, ch: 0.72, th: 0.14, kind: 'chainlink', tint: 0xffffff, hp: 130, house: null });
-    wallFill(tGate, () => 0);                                         // the treasury gate — shoot your way in
-    const tGateN = WallGrid({ ox: -1.5, oy: 0, oz: -35.7, dir: 'x', cols: 3, rows: 4, cw: 1, ch: 0.72, th: 0.14, kind: 'chainlink', tint: 0xffffff, hp: 130, house: null });
-    wallFill(tGateN, () => 0);                                        // …from either side
-    addProp('chest', -3.5, 0, -33.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
-    addProp('chest', 3.5, 0, -33.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
-    addProp('chest', -3.5, 0, -30.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
-    addProp('chest', 3.5, 0, -30.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
-    torch(-8.5, 1.9, -32); torch(8.5, 1.9, -32);
-    // wine cellar
-    for (const [kx, kz] of [[-38, -33], [-36.2, -33], [-34.4, -33], [-38, -17], [-36.2, -17], [-31, -34.2], [-26, -16.5]])
-      addProp('keg', kx, 0, kz, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
-    addProp('barrel', -27, 0, -33.5, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
-    addProp('crate', -25.5, 0, -20, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
-    torch(-32, 1.9, -22.2); torch(-39.8, 1.9, -25); torch(-24.2, 1.9, -30);
-    // crypt
-    for (let i = 0; i < 6; i++)
-      addProp('tomb', 27 + (i % 3) * 5, 0, -32 + Math.floor(i / 3) * 12, 1.0, 1.3, 0.32, T.cinder, 0xa8a29a, 30, { rotY: (i % 2) * 0.12 });
-    addProp('statue', 32, 0, -25.5, 1.1, 2.4, 1.1, T.cinder, 0xb5afa3, 90, { noWalk: true });
-    candle(25, 0, -35.2); candle(38.8, 0, -35.2); candle(25, 0, -16); candle(30, 0, -22);
-    torch(24.2, 1.9, -24); torch(39.8, 1.9, -30);
-    // spine + mouths
-    torch(-30, 1.9, -21.8); torch(-12, 1.9, -21.8); torch(6, 1.9, -21.8); torch(30, 1.9, -21.8);
-    torch(-20.8, 1.9, -12); torch(20.8, 1.9, -12); torch(-1.3, 1.9, -37); torch(1.3, 1.9, -30);
-
-    // grand stairs: courtyard → podium
-    buildStairs(0, -4.7, 0, -1, 8, 8, 0.37, 0.5, 0);
-    sblock(-7.4, 0, -6.6, -5.2, 1.5, -4.4);                          // flanking statue plinths
-    sblock(5.2, 0, -6.6, 7.4, 1.5, -4.4);
-    addProp('statue', -6.3, 1.5, -5.5, 1.5, 2.9, 1.5, T.cinder, 0xc5bfb3, 140, { noWalk: true });
-    addProp('statue', 6.3, 1.5, -5.5, 1.5, 2.9, 1.5, T.cinder, 0xc5bfb3, 140, { noWalk: true });
-    // NW / NE terrace stairs from the fields
-    buildStairs(-41, -43.8, 0, 1, 2.6, 8, 0.37, 0.5, 0);
-    buildStairs(41, -43.8, 0, 1, 2.6, 8, 0.37, 0.5, 0);
-
-    // ================= THE GRAND HALL =================
-    const HALL_T = 0xbeb8ac;
-    CAS({ ox: -16, oy: 2.9, oz: -10 }, 'x', 32, 13, (c, r) => {
-      if (c >= 13 && c <= 18 && r <= 5) return 1;                    // grand doors
-      if ((c === 4 || c === 5 || c === 26 || c === 27) && r >= 6 && r <= 8) return 3;
-      return 0;
-    }, HALL_T);
-    CAS({ ox: -16, oy: 2.9, oz: -38 }, 'x', 32, 13, (c, r) => {
-      if (c >= 14 && c <= 17 && r <= 3) return 1;                    // postern to the terrace
-      if (r >= 5 && r <= 11 && Math.abs(c - 15.5) + Math.abs(r - 8) * 1.15 < 5) return 1; // rose void
-      return 0;
-    }, HALL_T);
-    CAS({ ox: -16, oy: 2.9, oz: -38 }, 'z', 28, 13, (c, r) => {
-      if (c >= 17 && c <= 19 && r <= 4) return 1;                    // to the library
-      if (c >= 17 && c <= 18 && r >= 5 && r <= 7) return 1;          // gallery door
-      return r >= 7 && r <= 9 && c % 4 === 2 ? 3 : 0;
-    }, HALL_T);
-    CAS({ ox: 16, oy: 2.9, oz: -38 }, 'z', 28, 13, (c, r) => {
-      if (c >= 17 && c <= 19 && r <= 4) return 1;                    // to the chapel
-      if (c >= 17 && c <= 18 && r >= 5 && r <= 7) return 1;
-      return r >= 7 && r <= 9 && c % 4 === 2 ? 3 : 0;
-    }, HALL_T);
-    addProp('pane', 0, 6.1, -38, 8.6, 5.6, 0.2, T.stainedRose, 0xffffff, 60, { noWalk: true, glassy: true }); // the rose window
-    // marble floor + runner (the runner now STOPS at the treasury stairwell —
-    // no more carpet-covered hole swallowing people mid-hall)
-    plane(31.2, 27.2, T.marble(), 0, 2.96, -24).material.map.repeat.set(10, 9);
-    const rug = plane(2.9, 17.4, T.rug(), 0, 3.0, -19.6);
-    rug.material.map.repeat.set(1, 4);
-    // guard rails around the stairwell (open toward the dais)
-    CAS({ ox: -1.55, oy: 2.9, oz: -33.4 }, 'z', 5, 1, null, 0x9a948a, 25);
-    CAS({ ox: 1.55, oy: 2.9, oz: -33.4 }, 'z', 5, 1, null, 0x9a948a, 25);
-    CAS({ ox: -1.5, oy: 2.9, oz: -28.6 }, 'x', 3, 1, null, 0x9a948a, 25);
-    // colonnades: eternal plinths, breakable marble shafts
-    for (const pz of [-33, -28, -23, -18, -13]) {
-      for (const px of [-8, 8]) {
-        sblock(px - 0.85, 2.9, pz - 0.85, px + 0.85, 4.05, pz + 0.85);
-        addProp('pillar', px, 4.05, pz, 1.15, 7.3, 1.15, T.marble, 0xd6d0c2, 160, {});
-      }
-    }
-    // dais + throne
-    sblock(-6, 2.9, -37.6, 6, 3.65, -34.4);
-    sblock(-4, 2.9, -34.4, 4, 3.27, -33.6);
-    addProp('throne', 0, 3.65, -36.3, 1.5, 2.3, 1.2, T.plain, 0xd8b23a, 120, {});
-    addProp('knight', -3.6, 3.65, -36.2, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
-    addProp('knight', 3.6, 3.65, -36.2, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
-    addProp('brazier', -5.2, 3.65, -34.9, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
-    addProp('brazier', 5.2, 3.65, -34.9, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
-    flame(-5.2, 5.15, -34.9, 0.6); flame(5.2, 5.15, -34.9, 0.6);
-    // tapestries + banners
-    addProp('banner', -9.5, 6.4, -37.7, 2.2, 3.4, 0.14, () => T.tapestry(), 0xffffff, 20, { noWalk: true });
-    addProp('banner', 9.5, 6.4, -37.7, 2.2, 3.4, 0.14, () => T.tapestry('#1f2e6a'), 0xffffff, 20, { noWalk: true });
-    addProp('banner', -15.6, 6.4, -24, 0.14, 3.4, 2.2, () => T.tapestry('#1f2e6a'), 0xffffff, 20, { noWalk: true });
-    addProp('banner', 15.6, 6.4, -24, 0.14, 3.4, 2.2, () => T.tapestry(), 0xffffff, 20, { noWalk: true });
-    addProp('banner', -6, 8.2, -10.4, 1.4, 2.4, 0.12, () => T.heraldry(), 0xffffff, 15, { noWalk: true });
-    addProp('banner', 6, 8.2, -10.4, 1.4, 2.4, 0.12, () => T.heraldry('#2a4aa8'), 0xffffff, 15, { noWalk: true });
-    // chandeliers with real fire
-    for (const chz of [-16, -24, -32]) {
-      addProp('chandelier', 0, 8.6, chz, 2.0, 0.6, 2.0, T.plain, 0x3a3126, 40, { noWalk: true });
-      const chain = U.shadedBoxGeo(0.08, 3.0, 0.08);
-      chain.translate(0, 10.7, chz);
-      ironG.push(chain);
-      flame(0, 9.5, chz, 0.6);
-    }
-    for (const tz of [-14, -20, -26, -32]) { torch(-15.5, 5.4, tz); torch(15.5, 5.4, tz); }
-    torch(-8, 5.4, -10.5); torch(8, 5.4, -10.5);
-    // feast tables mid-hall
-    addProp('feast', -4.5, 2.9, -20, 1.5, 0.95, 5.4, T.floorWood, 0x7a5230, 60, {});
-    addProp('feast', 4.5, 2.9, -20, 1.5, 0.95, 5.4, T.floorWood, 0x7a5230, 60, {});
-    candle(-4.5, 3.85, -18.6); candle(4.5, 3.85, -21.4);
-    // galleries (6.5): west run + stairs, east full run + south balcony
-    sdeck(-14.2, -27.8, 2.8, 16.4, 6.5);
-    buildStairs(-14.2, -14.6, 0, -1, 2.6, 10, 0.36, 0.5, 2.9);
-    sdeck(14.2, -24.45, 2.8, 23.1, 6.5);
-    sdeck(0, -11.8, 25.6, 2.2, 6.5);
-    const hgRail = (o, dir, cols, gapFn) => {
-      const wl = WallGrid({ ...o, oy: 6.5, dir, cols, rows: 1, cw: 1, ch: 0.72, th: 0.12, kind: 'fence', tint: 0x5a4a38, hp: 12, house: null });
+    const rail = (o, dir, cols, gapFn) => {
+      const wl = WallGrid({ ...o, dir, cols, rows: 1, cw: 1, ch: 0.72, th: 0.12, kind: 'fence', tint: 0x5a4a38, hp: 12, house: null });
       wallFill(wl, gapFn || (() => 0));
     };
-    hgRail({ ox: -12.85, oz: -36 }, 'z', 16);
-    hgRail({ ox: 12.85, oz: -36 }, 'z', 23);
-    hgRail({ ox: -12.8, oz: -10.75 }, 'x', 26);
-    // roof (12.26) + ladder up from the east gallery
-    sdeck(-0.65, -24, 30.1, 27.4, 12.26, 0.32);
-    sdeck(15.05, -29.35, 1.3, 16.7, 12.26, 0.32);
-    sdeck(15.05, -14.75, 1.3, 8.9, 12.26, 0.32);
-    addLadder(15.5, -20.1, 6.5, 12.26, 'w');
+    const ruin = (o, dir, cols, hs, tint) => CAS(o, dir, cols, 7, (c, r) => r >= hs[c % hs.length] ? 1 : 0, tint || 0x9d978c, 50);
+
+    // ================= THE PODIUM & POTIONS DUNGEON =================
+    // one solid foundation (x -40..40, z -38..-10, top 2.9) with vaulted
+    // tunnels carved through it. voids: main corridor z -26..-22 (open both
+    // ends), cellar x -36..-8 z -36..-28, vault x 8..36, dais stair shaft
+    // x -2.5..2.5 z -34..-26, south tunnels x ±17..21 z -22..-10
+    sblock(-40, 0, -38, 40, 2.9, -36, true);
+    sblock(-40, 0, -36, -36, 2.9, -28, true); sblock(-8, 0, -36, -2.5, 2.9, -28, true);
+    sblock(-2.5, 0, -36, 2.5, 2.9, -34, true); sblock(2.5, 0, -36, 8, 2.9, -28, true);
+    sblock(36, 0, -36, 40, 2.9, -28, true);
+    sblock(-40, 0, -28, -30, 2.9, -26, true); sblock(-26, 0, -28, -14, 2.9, -26, true);
+    sblock(-10, 0, -28, -2.5, 2.9, -26, true); sblock(2.5, 0, -28, 18, 2.9, -26, true);
+    sblock(24, 0, -28, 40, 2.9, -26, true);
+    sblock(-40, 0, -22, -21, 2.9, -10, true); sblock(-17, 0, -22, 17, 2.9, -10, true);
+    sblock(21, 0, -22, 40, 2.9, -10, true);
+    // podium floor (holes: dais stair hatch, library ladder hatch)
+    sdeck(0, -37, 80, 2, 2.9, 0.3);
+    sdeck(-37.8, -34.8, 4.4, 2.4, 2.9, 0.3);            // west of the shelf hatch
+    sdeck(3.2, -34.8, 73.6, 2.4, 2.9, 0.3);             // east of it
+    sdeck(-34.6, -35.8, 2.0, 0.4, 2.9, 0.3);            // hatch rim + backstop
+    sdeck(-34.6, -35.25, 2.0, 0.7, 2.9, 0.3);
+    sdeck(0, -33.3, 80, 0.6, 2.9, 0.3);
+    sdeck(-21, -31, 38, 4, 2.9, 0.3);                   // west of dais hatch
+    sdeck(21, -31, 38, 4, 2.9, 0.3);                    // east of it
+    sdeck(0, -19.5, 80, 19, 2.9, 0.3);
+    // library shelf-hatch ladder (the bookcase upstairs hides it)
+    addLadder(-34.6, -34.9, 0, 2.9, 's');
+    // dais stairs: vault corridor → up behind the head table
+    buildStairs(0, -26.8, 0, -1, 3.6, 8, 0.37, 0.5, 0);
+    rail({ ox: -2.05, oy: 2.9, oz: -33.2 }, 'z', 4);
+    rail({ ox: 2.05, oy: 2.9, oz: -33.2 }, 'z', 4);
+    rail({ ox: -2, oy: 2.9, oz: -33.15 }, 'x', 4);
+    // the potion cellar (west)
+    addProp('cauldron', -32, 0, -32, 1.1, 1.0, 1.1, T.gunmetal, 0x3a4438, 35, { metal: true });
+    addProp('cauldron', -25, 0, -30.5, 1.1, 1.0, 1.1, T.gunmetal, 0x44383e, 35, { metal: true });
+    flame(-32, 0.4, -32, 0.5); flame(-25, 0.4, -30.5, 0.5);
+    addProp('shelf', -35.4, 0, -29, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('potion', -35.3, 1.9, -29, 0.3, 0.34, 0.3, T.plain, 0x59c48a, 6, { noWalk: true, glassy: true });
+    addProp('potion', -30, 0, -34.8, 0.32, 0.4, 0.32, T.plain, 0xc45977, 6, { glassy: true });
+    addProp('potion', -22, 0, -34.5, 0.3, 0.36, 0.3, T.plain, 0x5977c4, 6, { glassy: true });
+    addProp('keg', -18, 0, -33.5, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    addProp('keg', -16.2, 0, -33.5, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
+    addProp('crate', -12, 0, -30, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
+    addProp('crystal', -10.5, 0, -34.5, 0.8, 1.5, 0.8, T.plain, 0x7ae0d8, 50, { glassy: true });
+    torch(-34, 1.9, -28.4); torch(-14, 1.9, -28.4); torch(-24, 1.9, -35.6);
+    // the vault (east): iron gate, treasure, and things best left buried
+    const vGate = WallGrid({ ox: 18, oy: 0, oz: -27.1, dir: 'x', cols: 6, rows: 4, cw: 1, ch: 0.72, th: 0.14, kind: 'chainlink', tint: 0xffffff, hp: 120, house: null });
+    wallFill(vGate, () => 0);
+    addProp('chest', 13, 0, -33.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('chest', 17, 0, -31, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('chest', 30, 0, -33.5, 1.2, 0.85, 0.9, T.plain, 0xc9a227, 45, {});
+    addProp('crystal', 25, 0, -32.5, 0.9, 1.7, 0.9, T.plain, 0x9a7ae8, 50, { glassy: true });
+    addProp('crystal', 33.5, 0, -30, 0.7, 1.3, 0.7, T.plain, 0x7a9ae8, 45, { glassy: true });
+    addProp('knight', 20.5, 0, -34.6, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
+    addProp('knight', 26.5, 0, -34.6, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
+    addProp('tomb', 34.5, 0, -34.8, 1.0, 1.3, 0.32, T.cinder, 0xa8a29a, 30, { rotY: 0.1 });
+    candle(10, 0, -34.8); candle(37, 0, -29);
+    torch(9, 1.9, -28.4); torch(35, 1.9, -28.4);
+    // corridor + tunnel mouths
+    torch(-36, 1.9, -21.6); torch(-24, 1.9, -26.4); torch(-8, 1.9, -21.6);
+    torch(8, 1.9, -26.4); torch(24, 1.9, -21.6); torch(36, 1.9, -26.4);
+    torch(-19.4, 1.9, -14); torch(19.4, 1.9, -14);
+    addProp('tomb', -30, 0, -23.5, 1.0, 1.3, 0.32, T.cinder, 0xa8a29a, 30, {});
+    addProp('scroll', 30, 0, -23.2, 0.6, 0.4, 0.45, T.plain, 0xd8c9a0, 8, {});
+
+    // ================= THE FRONT: WALKWAY, STAIRS, TERRACE =================
+    // parapet along the podium's courtyard edge (gaps at every staircase)
+    CAS({ ox: -40, oy: 2.9, oz: -10.2 }, 'x', 80, 1, (c) => {
+      if ((c >= 26 && c <= 30) || (c >= 36 && c <= 44) || (c >= 50 && c <= 54)) return 1; // stairs
+      if ((c >= 14 && c <= 21) || (c >= 58 && c <= 65)) return 1;                         // cloister arms
+      return c % 2 ? 1 : 0;
+    }, 0xa39d91, 22);
+    buildStairs(0, -5.2, 0, -1, 7, 8, 0.37, 0.5, 0);      // grand center stairs
+    sdeck(0, -9.7, 7.4, 1.6, 2.9, 0.3);
+    buildStairs(-12, -5.2, 0, -1, 3.6, 8, 0.37, 0.5, 0);  // west flank
+    sdeck(-12, -9.7, 3.8, 1.6, 2.9, 0.3);
+    buildStairs(12, -5.2, 0, -1, 3.6, 8, 0.37, 0.5, 0);   // east flank
+    sdeck(12, -9.7, 3.8, 1.6, 2.9, 0.3);
+    sblock(-7.6, 0, -6.8, -5.4, 1.5, -4.6);               // wizard statue plinths
+    sblock(5.4, 0, -6.8, 7.6, 1.5, -4.6);
+    addProp('statue', -6.5, 1.5, -5.7, 1.5, 2.9, 1.5, T.cinder, 0xc5bfb3, 140, { noWalk: true });
+    addProp('statue', 6.5, 1.5, -5.7, 1.5, 2.9, 1.5, T.cinder, 0xc5bfb3, 140, { noWalk: true });
+    // north terrace behind the hall + field stairs
+    sdeck(0, -39.2, 8, 2.4, 2.9, 0.3);
+    buildStairs(0, -43.7, 0, 1, 3, 8, 0.37, 0.5, 0);
+    buildStairs(-26, -41.7, 0, 1, 3, 8, 0.37, 0.5, 0);
+    buildStairs(26, -41.7, 0, 1, 3, 8, 0.37, 0.5, 0);
+    CAS({ ox: -40, oy: 2.9, oz: -38.4 }, 'x', 26, 1, (c) => (c % 2 || (c >= 12 && c <= 16)) ? 1 : 0, 0xa39d91, 22);
+    CAS({ ox: 14, oy: 2.9, oz: -38.4 }, 'x', 18, 1, (c) => (c % 2 || (c >= 10 && c <= 14)) ? 1 : 0, 0xa39d91, 22);
+
+    // ================= THE GREAT HALL =================
+    const HALL_T = 0xbeb8ac;
+    CAS({ ox: -14, oy: 2.9, oz: -38 }, 'x', 28, 13, (c, r) => {
+      if (c >= 12 && c <= 15 && r <= 3) return 1;                    // postern → terrace
+      if (r >= 5 && r <= 11 && Math.abs(c - 13.5) + Math.abs(r - 8) * 1.15 < 5) return 1; // rose void
+      return 0;
+    }, HALL_T);
+    CAS({ ox: -14, oy: 2.9, oz: -12 }, 'x', 28, 13, (c, r) => {
+      if (c >= 11 && c <= 16 && r <= 5) return 1;                    // grand doors
+      if ((c === 4 || c === 5 || c === 22 || c === 23) && r >= 7 && r <= 9) return 3;
+      return 0;
+    }, HALL_T);
+    CAS({ ox: -14, oy: 2.9, oz: -38 }, 'z', 26, 13, (c, r) => {
+      if (c >= 3 && c <= 5 && r <= 4) return 1;                      // library door
+      if (c >= 8 && c <= 9 && r >= 5 && r <= 7) return 1;            // gallery door
+      if (c >= 17 && c <= 19 && r <= 3) return 1;                    // the cold hearth passage
+      return r >= 8 && r <= 10 && c % 4 === 1 ? 3 : 0;
+    }, HALL_T);
+    CAS({ ox: 14, oy: 2.9, oz: -38 }, 'z', 26, 13, (c, r) => {
+      if (c >= 3 && c <= 5 && r <= 4) return 1;                      // alchemy door
+      if (c >= 8 && c <= 9 && r >= 5 && r <= 7) return 1;            // gallery door
+      return r >= 8 && r <= 10 && c % 4 === 1 ? 3 : 0;
+    }, HALL_T);
+    addProp('pane', 0, 6.1, -38, 8.6, 5.6, 0.2, T.stainedRose, 0xffffff, 60, { noWalk: true, glassy: true });
+    plane(27.4, 25.6, T.marble(), 0, 2.96, -25).material.map.repeat.set(9, 8);
+    const rug = plane(2.2, 16, T.rug(), 0, 3.0, -22);
+    rug.material.map.repeat.set(1, 4);
+    // the cold hearth: stone cheeks + mantel dress the secret passage
+    sblock(-13.8, 2.9, -21.5, -13.1, 5.2, -20.9, true);
+    sblock(-13.8, 2.9, -18.1, -13.1, 5.2, -17.5, true);
+    sblock(-13.8, 5.1, -21.5, -13.1, 5.75, -17.5, true);
+    // dais + head table
+    sblock(-6, 2.9, -37.6, 6, 3.65, -34.4);
+    sblock(-4, 2.9, -34.4, 4, 3.27, -33.8);
+    addProp('feast', 0, 3.65, -36.1, 6.4, 0.95, 1.3, T.floorWood, 0x7a5230, 60, {});
+    addProp('throne', 0, 3.65, -37.3, 1.5, 2.3, 1.1, T.plain, 0xd8b23a, 120, {});
+    addProp('knight', -4.4, 3.65, -36.6, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
+    addProp('knight', 4.4, 3.65, -36.6, 0.8, 1.9, 0.8, T.gunmetal, 0xb8bec6, 25, { metal: true });
+    addProp('harp', -5.4, 3.65, -35, 1.0, 1.6, 0.5, T.plain, 0xd4af37, 40, {});
+    candle(-2.6, 4.6, -36.1); candle(2.6, 4.6, -36.1);
+    // four house tables, four house banners
+    for (const tx of [-6.5, -2.2, 2.2, 6.5])
+      addProp('feast', tx, 2.9, -24, 1.4, 0.95, 9, T.floorWood, 0x7a5230, 60, {});
+    addProp('banner', -9.5, 6.4, -37.7, 2.2, 3.4, 0.14, () => T.tapestry('#2c5a2c'), 0xffffff, 20, { noWalk: true });
+    addProp('banner', 9.5, 6.4, -37.7, 2.2, 3.4, 0.14, () => T.tapestry('#7a1f1f'), 0xffffff, 20, { noWalk: true });
+    addProp('banner', -13.6, 6.4, -25, 0.14, 3.4, 2.2, () => T.tapestry('#1f2e6a'), 0xffffff, 20, { noWalk: true });
+    addProp('banner', 13.6, 6.4, -25, 0.14, 3.4, 2.2, () => T.tapestry('#8a6a1f'), 0xffffff, 20, { noWalk: true });
+    // colonnades: eternal plinths, breakable marble shafts
+    for (const pz of [-32, -27, -22, -17]) {
+      for (const px of [-8.5, 8.5]) {
+        sblock(px - 0.85, 2.9, pz - 0.85, px + 0.85, 4.05, pz + 0.85);
+        addProp('pillar', px, 4.05, pz, 1.15, 7.2, 1.15, T.marble, 0xd6d0c2, 160, {});
+      }
+    }
+    // the floating candles
+    for (const tx of [-6.5, -2.2, 2.2, 6.5])
+      for (const cz of [-28, -24, -20])
+        floatCandle(tx, 7.4 + ((tx * 3 + cz) % 3) * 0.35, cz);
+    floatCandle(0, 8.3, -31); floatCandle(0, 8.0, -16);
+    for (const tz of [-16, -22, -28, -34]) { torch(-13.5, 5.4, tz); torch(13.5, 5.4, tz); }
+    // galleries (6.5): west run + stairs, east full run + south balcony
+    sdeck(-12.6, -27.6, 2.8, 16.8, 6.5);
+    buildStairs(-12.6, -14.4, 0, -1, 2.6, 10, 0.36, 0.5, 2.9);
+    sdeck(12.6, -25, 2.8, 22, 6.5);
+    sdeck(0, -13.4, 23.6, 2.4, 6.5);
+    rail({ ox: -11.35, oy: 6.5, oz: -36 }, 'z', 17);
+    rail({ ox: 11.35, oy: 6.5, oz: -36 }, 'z', 21);
+    rail({ ox: -11.8, oy: 6.5, oz: -14.55 }, 'x', 22);
+    // hall roof (12.26) + ladder from the east gallery
+    sdeck(-0.55, -25, 26.9, 26, 12.26, 0.32);                        // x -14..12.9
+    sdeck(13.45, -28.7, 1.1, 18.6, 12.26, 0.32);                     // east strip, north of hatch
+    sdeck(13.45, -14.3, 1.1, 4.6, 12.26, 0.32);                      // south of hatch
+    addLadder(13.5, -17.5, 6.5, 12.26, 'w');
     const hpar = (o, dir, cols, gapFn) => CAS({ ...o, oy: 12.26 }, dir, cols, 1, gapFn || ((c) => c % 2 ? 1 : 0), 0xa8a296, 24);
-    hpar({ ox: -16, oz: -38 }, 'x', 32);
-    hpar({ ox: -16, oz: -10 }, 'x', 32);
-    hpar({ ox: -16, oz: -38 }, 'z', 28);
-    hpar({ ox: 16, oz: -38 }, 'z', 28);
-    addProp('gargoyle', -15.4, 12.26, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-    addProp('gargoyle', 15.4, 12.26, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-    addProp('gargoyle', -15.4, 12.26, -10.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-    addProp('gargoyle', 15.4, 12.26, -10.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    hpar({ ox: -14, oz: -38 }, 'x', 28);
+    hpar({ ox: -14, oz: -12 }, 'x', 28);
+    hpar({ ox: -14, oz: -38 }, 'z', 26);
+    hpar({ ox: 14, oz: -38 }, 'z', 26, (c) => (c % 2 || (c >= 19 && c <= 22)) ? 1 : 0);
+    addProp('gargoyle', -13.4, 12.26, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    addProp('gargoyle', 13.4, 12.26, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    addProp('gargoyle', -13.4, 12.26, -12.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
 
     // ================= THE LIBRARY (west wing) =================
     const LIB_T = 0xb2ab9c;
-    CAS({ ox: -44, oy: 2.9, oz: -38 }, 'x', 28, 9, (c, r) => (r === 4 || r === 5) && c % 5 === 2 ? 3 : 0, LIB_T);
-    CAS({ ox: -44, oy: 2.9, oz: -10 }, 'x', 28, 9, (c, r) => {
-      if (c >= 5 && c <= 7 && r <= 4) return 1;                      // door to the podium front
+    CAS({ ox: -40, oy: 2.9, oz: -38 }, 'x', 26, 9, (c, r) => (r === 4 || r === 5) && c % 5 === 2 ? 3 : 0, LIB_T);
+    CAS({ ox: -40, oy: 2.9, oz: -12 }, 'x', 26, 9, (c, r) => {
+      if (c >= 12 && c <= 14 && r <= 3) return 1;                    // door to the walkway
       return (r === 4 || r === 5) && c % 5 === 2 ? 3 : 0;
     }, LIB_T);
-    CAS({ ox: -44, oy: 2.9, oz: -38 }, 'z', 28, 9, (c, r) => ((r === 4 || r === 5 || r === 7) && c % 3 === 1 ? 3 : 0), LIB_T);
-    // book labyrinth: three tall shelf rows with cut-throughs
+    CAS({ ox: -40, oy: 2.9, oz: -38 }, 'z', 26, 9, (c, r) => ((r === 4 || r === 5) && c % 3 === 1 ? 3 : 0), LIB_T);
+    // shelf labyrinth (three rows, offset cut-throughs)
     const SHELF = (ox, oz, cols, gapC) => {
-      const wl = WallGrid({ ox, oy: 2.9, oz, dir: 'z', cols, rows: 4, cw: 1, ch: 0.72, th: 0.5, kind: 'book', tint: 0xffffff, hp: 30, house: null });
+      const wl = WallGrid({ ox, oy: 2.9, oz, dir: 'x', cols, rows: 4, cw: 1, ch: 0.72, th: 0.5, kind: 'book', tint: 0xffffff, hp: 30, house: null });
       wallFill(wl, (c) => (c === gapC || c === gapC + 1) ? 1 : 0);
     };
-    SHELF(-38, -34, 18, 8);
-    SHELF(-33, -32, 18, 3);
-    SHELF(-28, -34, 18, 12);
-    // reading end (east half)
-    addProp('feast', -21, 2.9, -28, 1.4, 0.95, 4.6, T.floorWood, 0x5a3f26, 55, {});
-    addProp('feast', -21, 2.9, -17, 1.4, 0.95, 4.6, T.floorWood, 0x5a3f26, 55, {});
-    addProp('lectern', -19, 2.9, -22.5, 0.55, 1.25, 0.55, T.plain, 0x6a4a28, 18, {});
-    addProp('books', -21, 3.85, -27, 0.55, 0.35, 0.42, T.plain, 0x8f3a2e, 8, { noWalk: true });
-    addProp('books', -21, 3.85, -18.4, 0.55, 0.35, 0.42, T.plain, 0x2e5a8f, 8, { noWalk: true });
-    addProp('books', -25.5, 2.9, -12.5, 0.6, 0.42, 0.5, T.plain, 0x3f7a3f, 8, {});
-    candle(-21, 3.85, -25.6); candle(-21, 3.85, -19.8); candle(-19, 4.2, -22.5);
-    // the great globe
-    addProp('globe', -19.5, 2.9, -33.5, 0.85, 1.15, 0.85, T.plain, 0x6a4a28, 40, {});
-    W._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 8), new THREE.MeshBasicMaterial({ map: T.plain(), color: 0xc9b28a }));
-    W._globeMesh.position.set(-19.5, 4.55, -33.5);
-    grp.add(W._globeMesh);
-    // hearth on the west wall
-    hearth(-43.8, -24, true, 1);
-    addProp('bench', -41.5, 2.9, -21.4, 1.7, 0.55, 0.6, T.plain, 0x6a4a28, 25, {});
-    // mezzanine ring: west leg + stairs, north leg, east rim to the hall gallery door
-    sdeck(-42.1, -28.7, 2.8, 16.6, 6.5);
-    buildStairs(-42.1, -15.4, 0, -1, 2.6, 10, 0.36, 0.5, 2.9);
-    sdeck(-30, -36.6, 26, 2.6, 6.5);
-    sdeck(-17.9, -29.65, 2.8, 11.3, 6.5);
-    sdeck(-17.9, -20, 2.8, 8, 6.5);
-    hgRail({ ox: -40.7, oz: -35.3 }, 'z', 20);
-    hgRail({ ox: -43, oz: -35.3 }, 'x', 24);
-    hgRail({ ox: -19.3, oz: -35.3 }, 'z', 19);
-    addProp('books', -42.3, 7.4, -31, 0.55, 0.35, 0.42, T.plain, 0xb08a2e, 8, { noWalk: true });
-    torch(-43.6, 5.2, -30); torch(-43.6, 5.2, -16); torch(-24, 5.2, -37.6); torch(-30, 5.2, -10.4);
-    // roof (9.38) + access ladder from the north mezzanine (hole in the deck)
-    sdeck(-32.65, -24, 22.3, 27.4, 9.38, 0.3);
-    sdeck(-19.9, -23.1, 3.2, 25.6, 9.38, 0.3);
-    sdeck(-19.1, -36.8, 1.6, 1.8, 9.38, 0.3);
-    sdeck(-20.7, -37.3, 1.6, 0.8, 9.38, 0.3);                        // hatch backstop
-    addLadder(-20.7, -36.6, 6.5, 9.38, 's');
-    const lpar = (o, dir, cols) => CAS({ ...o, oy: 9.38 }, dir, cols, 1, (c) => c % 2 ? 1 : 0, 0xa39d91, 22);
-    lpar({ ox: -44, oz: -38 }, 'x', 28);
-    lpar({ ox: -44, oz: -10 }, 'x', 28);
-    lpar({ ox: -44, oz: -38 }, 'z', 28);
-    addProp('gargoyle', -43.4, 9.38, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-    addProp('gargoyle', -43.4, 9.38, -10.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-
-    // ================= THE CHAPEL (east wing) + BELL TOWER =================
-    const CHAP_T = 0xbcb4a4;
-    CAS({ ox: 16, oy: 2.9, oz: -38 }, 'x', 22, 11, (c, r) => {
-      if (c >= 12 && c <= 15 && r >= 4 && r <= 9) return 1;          // north pane void
-      return 0;
-    }, CHAP_T);
-    CAS({ ox: 16, oy: 2.9, oz: -10 }, 'x', 28, 11, (c, r) => {
-      if (c >= 5 && c <= 7 && r <= 4) return 1;                      // podium-front door
-      return 0;
-    }, CHAP_T);
-    CAS({ ox: 44, oy: 2.9, oz: -32 }, 'z', 22, 11, (c, r) => {
-      if ((c >= 2 && c <= 4) || (c >= 10 && c <= 12) || (c >= 18 && c <= 20)) { if (r >= 4 && r <= 9) return 1; }
-      return 0;
-    }, CHAP_T);
-    addProp('pane', 30, 6.4, -38, 4.2, 4.4, 0.2, T.stainedTall, 0xffffff, 45, { noWalk: true, glassy: true });
-    addProp('pane', 44, 6.4, -28.5, 0.2, 4.4, 3.2, T.stainedTall, 0xffffff, 45, { noWalk: true, glassy: true });
-    addProp('pane', 44, 6.4, -20.5, 0.2, 4.4, 3.2, T.stainedTall, 0xffffff, 45, { noWalk: true, glassy: true });
-    addProp('pane', 44, 6.4, -12.5, 0.2, 4.4, 3.2, T.stainedTall, 0xffffff, 45, { noWalk: true, glassy: true });
-    // nave: pews, altar, candles
-    for (const [px2, pz2] of [[25, -29], [34, -29], [25, -25], [34, -25], [25, -21], [34, -21], [25, -17], [34, -17]])
-      addProp('pew', px2, 2.9, pz2, 3.2, 0.72, 0.72, T.plain, 0x7a5230, 20, {});
-    addProp('desk', 30, 2.9, -35.4, 2.6, 1.05, 0.9, T.plain, 0xd9cdb8, 45, {}); // the altar
-    candle(28.9, 3.95, -35.4); candle(30, 3.95, -35.6); candle(31.1, 3.95, -35.4);
-    addProp('banner', 20.5, 6.4, -37.7, 2.0, 3.2, 0.14, () => T.tapestry('#3f2a5a'), 0xffffff, 20, { noWalk: true });
-    torch(16.4, 5.2, -20); torch(16.4, 5.2, -30); torch(43.6, 5.2, -24);
-    // choir loft (6.5) with the organ, stairs along the east wall
-    sdeck(30, -11.6, 20, 2.8, 6.5);
-    sdeck(42.2, -13.7, 2.2, 7, 6.5);
-    buildStairs(42.2, -22, 0, 1, 2.2, 10, 0.36, 0.5, 2.9);
-    hgRail({ ox: 20, oz: -13 }, 'x', 20);
-    hgRail({ ox: 41.1, oz: -17.2 }, 'z', 4);
-    for (let p = 0; p < 10; p++) { // organ pipes on the south wall
-      const ph = 1.3 + Math.abs(p - 4.5) * 0.34;
-      const g = new THREE.CylinderGeometry(0.15, 0.15, ph, 6);
-      g.translate(22.5 + p * 1.05, 7.6 + ph / 2, -10.35);
-      organG.push(g);
-    }
-    addProp('organ', 27, 6.5, -11.4, 2.8, 1.25, 0.9, T.plain, 0x5a3a24, 70, {});
-    // west-side gallery landing (through the hall's east gallery door)
-    sdeck(17.9, -20, 2.8, 8, 6.5);
-    hgRail({ ox: 19.3, oz: -24 }, 'z', 8);
-    // roof (10.82), stopping short of the bell tower + exterior ladder chain on the south face
-    sdeck(27.05, -24, 21.5, 27.4, 10.82, 0.3);
-    sdeck(40.75, -21.05, 5.9, 21.5, 10.82, 0.3);
-    addLadder(25, -9.45, 2.9, 6.9, 's');
-    addLadder(25, -9.45, 6.9, 10.82, 's');
-    buildPlatform(25, -8.75, 2.6, 1.5, 6.9, 0.16);
-    const cpar = (o, dir, cols, gapFn) => CAS({ ...o, oy: 10.82 }, dir, cols, 1, gapFn || ((c) => c % 2 ? 1 : 0), 0xa8a094, 22);
-    cpar({ ox: 16, oz: -10 }, 'x', 28, (c) => (c % 2 || (c >= 8 && c <= 10)) ? 1 : 0); // gap at the ladder
-    cpar({ ox: 16, oz: -38 }, 'x', 22);
-    cpar({ ox: 44, oz: -32 }, 'z', 22);
-    cpar({ ox: 16, oz: -38 }, 'z', 28);
-    // bell tower (top 17.3, the crown of the map)
-    CAS({ ox: 38, oy: 2.9, oz: -38 }, 'x', 6, 20, (c, r) => ((r >= 16 && r <= 18 && c >= 1 && c <= 4) || (r === 19 && c % 2 === 0)) ? 1 : 0, 0xb2ab9e, 58);
-    CAS({ ox: 38, oy: 2.9, oz: -32 }, 'x', 6, 20, (c, r) => ((c >= 2 && c <= 3 && r <= 4) || (r >= 16 && r <= 18 && c >= 1 && c <= 4) || (r === 19 && c % 2 === 0)) ? 1 : 0, 0xb2ab9e, 58);
-    CAS({ ox: 38, oy: 2.9, oz: -38 }, 'z', 6, 20, (c, r) => ((r >= 16 && r <= 18 && c >= 1 && c <= 4) || (r === 19 && c % 2 === 0) || (r >= 11 && r <= 13 && c >= 2 && c <= 3)) ? 1 : 0, 0xb2ab9e, 58);
-    CAS({ ox: 44, oy: 2.9, oz: -38 }, 'z', 6, 20, (c, r) => ((r >= 16 && r <= 18 && c >= 1 && c <= 4) || (r === 19 && c % 2 === 0)) ? 1 : 0, 0xb2ab9e, 58);
-    addLadder(38.55, -35, 2.9, 8.1, 'e');
-    addLadder(38.55, -35, 8.1, 13.2, 'e');
-    addLadder(38.55, -35, 13.2, 16.3, 'e');
-    sdeck(41.3, -35, 4.0, 4.8, 8.1, 0.22);
-    sdeck(41.3, -35, 4.0, 4.8, 13.2, 0.22);
-    sdeck(41.3, -35, 4.0, 4.8, 16.3, 0.22);
-    addProp('bell', 41.3, 16.3, -35, 0.95, 1.05, 0.95, T.plain, 0xd4af37, 60, { metal: true, noWalk: true });
-    torch(43.5, 4.9, -35);
-
-    // ================= SOUTH WINGS =================
-    // BARRACKS (south-west)
-    const BAR_T = 0xaaa294;
-    CAS({ ox: -44, oz: -6 }, 'x', 26, 8, (c, r) => (c >= 11 && c <= 13 && r <= 3) ? 1 : ((r === 4 || r === 5) && c % 4 === 1 ? 3 : 0), BAR_T);
-    CAS({ ox: -44, oz: 26 }, 'x', 26, 8, (c, r) => ((r === 4 || r === 5) && c % 4 === 1 ? 3 : 0), BAR_T);
-    CAS({ ox: -44, oz: -6 }, 'z', 32, 8, (c, r) => ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), BAR_T);
-    CAS({ ox: -18, oz: -6 }, 'z', 32, 8, (c, r) => (c >= 14 && c <= 16 && r <= 3) ? 1 : ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), BAR_T);
-    for (const [bx2, bz2] of [[-40, 0], [-35, 0], [-30, 0], [-40, 22], [-35, 22], [-30, 22]])
-      addProp('bed', bx2, 0, bz2, 2.1, 0.7, 1.3, T.bed, 0xffffff, 35, {});
-    addProp('crate', -25, 0, 1.5, 0.9, 0.9, 0.9, T.plain, 0xb98a55, 18, {});
-    addProp('crate', -25, 0, 20.5, 0.9, 0.9, 0.9, T.plain, 0xb98a55, 18, {});
-    // the armory cage (iron — hard to crack)
+    SHELF(-38, -31, 17, 12);
+    SHELF(-38, -27, 17, 4);
+    SHELF(-38, -23, 17, 9);
+    // the secret bookcase: four shelf sections boxing the dungeon hatch.
+    // shoot the books, find the ladder. tell no one.
+    const SECRET = (ox, oz, dir) => {
+      const wl = WallGrid({ ox, oy: 2.9, oz, dir, cols: 2, rows: 4, cw: 1, ch: 0.72, th: 0.4, kind: 'book', tint: 0xffffff, hp: 30, house: null });
+      wallFill(wl, () => 0);
+    };
+    SECRET(-35.6, -33.5, 'x'); SECRET(-35.6, -35.7, 'x');
+    SECRET(-33.5, -35.6, 'z'); SECRET(-35.7, -35.6, 'z');
+    // restricted section (SW corner, iron cage)
     const CAGE = (o, dir, cols, fn) => {
-      const wl = WallGrid({ ox: o.ox, oy: 0, oz: o.oz, dir, cols, rows: 5, cw: 1, ch: 0.72, th: 0.12, kind: 'chainlink', tint: 0xffffff, hp: 90, house: null });
+      const wl = WallGrid({ ox: o.ox, oy: 2.9, oz: o.oz, dir, cols, rows: 5, cw: 1, ch: 0.72, th: 0.12, kind: 'chainlink', tint: 0xffffff, hp: 90, house: null });
       wallFill(wl, fn || (() => 0));
     };
-    CAGE({ ox: -43, oz: 12 }, 'x', 7);
-    CAGE({ ox: -43, oz: 20 }, 'x', 7);
-    CAGE({ ox: -36, oz: 12 }, 'z', 8, (c, r) => (c >= 3 && c <= 4 && r <= 3) ? 1 : 0);
-    addProp('rack', -42.6, 0, 14.5, 0.5, 1.8, 1.6, T.shelf, 0xffffff, 45, {});
-    addProp('rack', -42.6, 0, 18, 0.5, 1.8, 1.6, T.shelf, 0xffffff, 45, {});
-    addProp('dummy', -39, 0, 16.5, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
-    // sleeping loft (3.2) + stairs
-    sdeck(-37.8, -1.5, 11.6, 8.2, 3.2, 0.24);
-    buildStairs(-31.3, 7.1, 0, -1, 2.4, 9, 0.36, 0.5, 0);
-    addProp('bed', -41, 3.2, -3.5, 2.1, 0.7, 1.3, T.bed, 0xffffff, 35, {});
-    addProp('bed', -36, 3.2, -3.5, 2.1, 0.7, 1.3, T.bed, 0xffffff, 35, {});
-    hgRail({ ox: -32.2, oz: -5.6 }, 'z', 8);
-    torch(-43.6, 2.6, 6); torch(-18.4, 2.6, 16); torch(-30, 2.6, 25.6);
-    // roof (5.76) + alley ladder
-    sdeck(-31, 10, 25.4, 31.4, 5.76, 0.3);
-    addLadder(-17.55, 12, 0, 5.76, 'e');
-    const bpar = (o, dir, cols, gapFn) => CAS({ ...o, oy: 5.76 }, dir, cols, 1, gapFn || ((c) => c % 2 ? 1 : 0), 0x9d968a, 20);
-    bpar({ ox: -44, oz: -6 }, 'x', 26);
-    bpar({ ox: -44, oz: 26 }, 'x', 26);
-    bpar({ ox: -44, oz: -6 }, 'z', 32);
-    bpar({ ox: -18, oz: -6 }, 'z', 32, (c) => (c % 2 || (c >= 17 && c <= 19)) ? 1 : 0); // ladder gap
-    addProp('gargoyle', -43.4, 5.76, 25.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    CAGE({ ox: -40, oz: -18 }, 'x', 10, (c, r) => (c >= 4 && c <= 5 && r <= 3) ? 1 : 0);
+    CAGE({ ox: -30, oz: -18 }, 'z', 6);
+    addProp('mirror', -38.6, 2.9, -13.1, 1.5, 2.3, 0.16, T.glassTex, 0xbfd4e0, 30, { glassy: true });
+    addProp('crystal', -33, 2.9, -14, 0.7, 1.3, 0.7, T.plain, 0xe87ab8, 45, { glassy: true });
+    addProp('books', -36.5, 2.9, -16.5, 0.6, 0.42, 0.5, T.plain, 0x3f2a5a, 8, {});
+    addProp('scroll', -32.5, 2.9, -16.8, 0.6, 0.4, 0.45, T.plain, 0xd8c9a0, 8, {});
+    candle(-35, 2.9, -13.5);
+    // reading tables (east half)
+    addProp('feast', -17.8, 2.9, -29, 1.3, 0.95, 4.6, T.floorWood, 0x5a3f26, 55, {});
+    addProp('feast', -17.8, 2.9, -18.5, 1.3, 0.95, 4.6, T.floorWood, 0x5a3f26, 55, {});
+    addProp('lectern', -16.2, 2.9, -24, 0.55, 1.25, 0.55, T.plain, 0x6a4a28, 18, {});
+    addProp('books', -17.8, 3.85, -28, 0.55, 0.35, 0.42, T.plain, 0x8f3a2e, 8, { noWalk: true });
+    addProp('books', -17.8, 3.85, -19.6, 0.55, 0.35, 0.42, T.plain, 0x2e5a8f, 8, { noWalk: true });
+    candle(-17.8, 3.85, -26.6); candle(-17.8, 3.85, -17.4);
+    addProp('globe', -16.5, 2.9, -33.5, 0.85, 1.15, 0.85, T.plain, 0x6a4a28, 40, {});
+    W._globeMesh = new THREE.Mesh(new THREE.SphereGeometry(0.62, 10, 8), new THREE.MeshBasicMaterial({ map: T.plain(), color: 0xc9b28a }));
+    W._globeMesh.position.set(-16.5, 4.55, -33.5);
+    grp.add(W._globeMesh);
+    addProp('chandelier', -27, 7.4, -25, 1.8, 0.55, 1.8, T.plain, 0x3a3126, 40, { noWalk: true });
+    flame(-27, 8.2, -25, 0.5);
+    torch(-39.6, 5.2, -30); torch(-39.6, 5.2, -16); torch(-26, 5.2, -37.6);
+    // mezzanine ring: west leg + stairs, north leg, east stub to the hall door
+    sdeck(-38.6, -27.6, 2.8, 16.8, 6.5);
+    buildStairs(-38.6, -14.4, 0, -1, 2.6, 10, 0.36, 0.5, 2.9);
+    sdeck(-26.8, -36.6, 20.8, 2.8, 6.5);
+    sdeck(-15.4, -31.4, 2.8, 8.4, 6.5);
+    rail({ ox: -37.35, oy: 6.5, oz: -35.2 }, 'z', 16);
+    rail({ ox: -37.2, oy: 6.5, oz: -35.25 }, 'x', 19);
+    rail({ ox: -16.65, oy: 6.5, oz: -35.2 }, 'z', 8);
+    addProp('books', -38.8, 7.4, -31, 0.55, 0.35, 0.42, T.plain, 0xb08a2e, 8, { noWalk: true });
+    // roof (9.38) + hatch ladder from the north mezzanine
+    sdeck(-30.2, -25, 19.6, 26, 9.38, 0.3);                          // x -40..-20.4
+    sdeck(-16.4, -25, 4.8, 26, 9.38, 0.3);                           // x -18.8..-14
+    sdeck(-19.6, -37.45, 1.6, 1.1, 9.38, 0.3);                       // hatch backstop
+    sdeck(-19.6, -23.95, 1.6, 23.9, 9.38, 0.3);
+    addLadder(-19.6, -36.6, 6.5, 9.38, 's');
+    const lpar = (o, dir, cols) => CAS({ ...o, oy: 9.38 }, dir, cols, 1, (c) => c % 2 ? 1 : 0, 0xa39d91, 22);
+    lpar({ ox: -40, oz: -38 }, 'x', 26);
+    lpar({ ox: -40, oz: -12 }, 'x', 26);
+    lpar({ ox: -40, oz: -38 }, 'z', 26);
+    addProp('gargoyle', -39.4, 9.38, -37.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    addProp('gargoyle', -39.4, 9.38, -12.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
 
-    // KITCHENS + FEAST HALL (south-east)
-    const KIT_T = 0xaea694;
-    CAS({ ox: 18, oz: -6 }, 'x', 26, 8, (c, r) => (c >= 11 && c <= 13 && r <= 3) ? 1 : ((r === 4 || r === 5) && c % 4 === 1 ? 3 : 0), KIT_T);
-    CAS({ ox: 18, oz: 26 }, 'x', 26, 8, (c, r) => (c >= 4 && c <= 5 && r <= 3) ? 1 : ((r === 4 || r === 5) && c % 4 === 1 ? 3 : 0), KIT_T);
-    CAS({ ox: 18, oz: -6 }, 'z', 32, 8, (c, r) => (c >= 14 && c <= 16 && r <= 3) ? 1 : ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), KIT_T);
-    CAS({ ox: 44, oz: -6 }, 'z', 32, 8, (c, r) => ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), KIT_T);
-    // feast half (north)
-    addProp('feast', 27, 0, 1.5, 1.5, 0.95, 6.4, T.floorWood, 0x7a5230, 60, {});
-    addProp('feast', 35, 0, 1.5, 1.5, 0.95, 6.4, T.floorWood, 0x7a5230, 60, {});
-    addProp('bench', 24.9, 0, 1.5, 0.6, 0.55, 5.4, T.plain, 0x6a4a28, 25, {});
-    addProp('bench', 37.1, 0, 1.5, 0.6, 0.55, 5.4, T.plain, 0x6a4a28, 25, {});
-    candle(27, 0.95, 0); candle(35, 0.95, 3);
-    addProp('chandelier', 31, 4.4, 1.5, 1.8, 0.55, 1.8, T.plain, 0x3a3126, 40, { noWalk: true });
-    flame(31, 5.2, 1.5, 0.5);
-    hearth(43.8, 2, false, -1);
-    // kitchen half (south)
-    addProp('cookpot', 39, 0, 18, 0.9, 0.85, 0.9, T.gunmetal, 0x3f3b36, 30, { metal: true });
-    addProp('cookpot', 36, 0, 21.5, 0.9, 0.85, 0.9, T.gunmetal, 0x3f3b36, 30, { metal: true });
-    addProp('cookpot', 41, 0, 14.5, 0.75, 0.7, 0.75, T.gunmetal, 0x3f3b36, 26, { metal: true });
-    flame(39, 0.5, 18, 0.5); flame(36, 0.5, 21.5, 0.5);
-    addProp('desk', 30, 0, 17, 3.2, 1.05, 1.0, T.floorWood, 0x8a5a32, 50, {});
-    addProp('shelf', 21, 0, 24.5, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
-    addProp('barrel', 20.5, 0, 20, 0.7, 1.0, 0.7, T.plain, 0x8a3a2a, 18, { metal: true });
-    addProp('keg', 23, 0, 22.5, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
-    addProp('crate', 25.5, 0, 24, 1.0, 1.0, 1.0, T.plain, 0xb98a55, 20, {});
-    // pantry loft + stairs
-    sdeck(37.8, -1.5, 11.6, 8.2, 3.2, 0.24);
-    buildStairs(31.3, 7.1, 0, -1, 2.4, 9, 0.36, 0.5, 0);
-    addProp('crate', 40, 3.2, -3, 0.9, 0.9, 0.9, T.plain, 0xb98a55, 18, {});
-    addProp('keg', 36.5, 3.2, -3.5, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
-    hgRail({ ox: 32.2, oz: -5.6 }, 'z', 8);
-    torch(43.6, 2.6, 12); torch(18.4, 2.6, 6); torch(30, 2.6, 25.6);
-    // roof + alley ladder
-    sdeck(31, 10, 25.4, 31.4, 5.76, 0.3);
-    addLadder(17.55, 12, 0, 5.76, 'w');
-    bpar({ ox: 18, oz: -6 }, 'x', 26);
-    bpar({ ox: 18, oz: 26 }, 'x', 26);
-    bpar({ ox: 44, oz: -6 }, 'z', 32);
-    bpar({ ox: 18, oz: -6 }, 'z', 32, (c) => (c % 2 || (c >= 17 && c <= 19)) ? 1 : 0);
-    addProp('gargoyle', 43.4, 5.76, 25.4, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
-
-    // ================= THE CLOISTER COURTYARD =================
-    // fountain: indestructible, and the sound of it never stops
-    const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.75, 2.95, 0.9, 12), new THREE.MeshBasicMaterial({ map: T.cinder(), color: 0xc5bfb0 }));
-    basin.position.set(0, 0.45, 6);
-    grp.add(basin);
-    addCollider(-2.6, 0, 3.4, 2.6, 0.9, 8.6, {});
-    slabs.push({ minx: -2.6, minz: 3.4, maxx: 2.6, maxz: 8.6, top: 0.9 });
-    plane(4.6, 4.6, T.water(), 0, 0.78, 6).material.map.repeat.set(1, 1);
-    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 2.3, 8), new THREE.MeshBasicMaterial({ map: T.cinder(), color: 0xb5afa0 }));
-    spire.position.set(0, 1.9, 6);
-    grp.add(spire);
-    addCollider(-0.4, 0.9, 5.6, 0.4, 3.05, 6.4, { tree: true });
-    // cloister balconies (3.4, walkable ring that meets the podium)
-    sdeck(-14.5, 5, 3.0, 26, 3.4);                                    // west: z -8..18
-    sdeck(14.5, 5, 3.0, 26, 3.4);                                     // east
-    sdeck(1.2, 16.5, 23.6, 3.0, 3.4);                                 // south (stair slot at the west end)
-    for (const cz2 of [-4, -0.5, 3, 6.5, 10, 13.5]) {
-      sblock(-14.75, 0, cz2 - 0.25, -14.25, 3.4, cz2 + 0.25, true);
-      sblock(14.25, 0, cz2 - 0.25, 14.75, 3.4, cz2 + 0.25, true);
-    }
-    for (const cx2 of [-8, -4, 0, 4, 8, 12]) // no column at -12: the balcony stairs land there
-      sblock(cx2 - 0.25, 0, 15.15, cx2 + 0.25, 3.4, 15.65, true);
-    buildStairs(-11.9, 13.4, 0, 1, 2.2, 10, 0.35, 0.5, 0);
-    const crail = (o, dir, cols, gapFn) => {
-      const wl = WallGrid({ ...o, oy: 3.4, dir, cols, rows: 1, cw: 1, ch: 0.72, th: 0.12, kind: 'fence', tint: 0x5a4a38, hp: 12, house: null });
-      wallFill(wl, gapFn || (() => 0));
-    };
-    crail({ ox: -13, oz: -8 }, 'z', 26, (c) => (c >= 10 && c <= 12) ? 1 : 0);
-    crail({ ox: 13, oz: -8 }, 'z', 26, (c) => (c >= 10 && c <= 12) ? 1 : 0);
-    crail({ ox: -10.6, oz: 15 }, 'x', 21);
-    buildTree(-8, 11); buildTree(8, 2);
-    addProp('stall', -10.5, 0, 1, 2.6, 1.9, 1.6, T.plywood, 0x8f3a2e, 40, {});
-    addProp('stall', 10.5, 0, 11, 2.6, 1.9, 1.6, T.plywood, 0x2e5a8f, 40, {});
-    addProp('bench', -5, 0, 9.5, 1.7, 0.55, 0.6, T.plain, 0x6a4a28, 25, {});
-    addProp('bench', 5, 0, 2.5, 1.7, 0.55, 0.6, T.plain, 0x6a4a28, 25, {});
-    addProp('brazier', -5, 0, -2, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
-    addProp('brazier', 5, 0, -2, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
-    flame(-5, 1.5, -2, 0.6); flame(5, 1.5, -2, 0.6);
-
-    // ================= GROUNDS: RUINS, WINDMILL, ORCHARD, YARD =================
-    const ruin = (o, dir, cols, hs, tint) => CAS(o, dir, cols, 7, (c, r) => r >= hs[c % hs.length] ? 1 : 0, tint || 0x9d978c, 50);
-    ruin({ ox: -56, oz: 8 }, 'z', 10, [5, 6, 4, 2, 3, 5, 6, 4, 3, 2]);
-    ruin({ ox: -58, oz: -26 }, 'x', 12, [3, 5, 6, 7, 5, 4, 2, 2, 4, 6, 5, 3]);
-    ruin({ ox: 52, oz: -20 }, 'z', 12, [2, 4, 6, 6, 7, 5, 3, 2, 3, 5, 6, 4]);
-    ruin({ ox: 46, oz: 24 }, 'x', 10, [4, 6, 5, 3, 2, 2, 4, 6, 7, 5]);
-    ruin({ ox: -14, oz: 36 }, 'x', 9, [7, 6, 5, 3, 2, 1, 2, 3, 2]);   // the old south gate
-    ruin({ ox: 5, oz: 36 }, 'x', 9, [2, 3, 2, 1, 2, 3, 5, 6, 7]);
-    addProp('gargoyle', -13.4, 5.04, 36, 0.7, 0.95, 0.7, T.cinder, 0x8f897e, 35, { noWalk: true });
-    sblock(-20, 0, 30, -17.6, 1.1, 32.6);                             // toppled stones near the gate
-    sblock(15, 0, 39, 17.2, 0.9, 41.2);
-    // windmill (northeast fields)
-    CAS({ ox: 48, oz: -46 }, 'x', 4, 8, null, 0xa8a296, 50);
-    CAS({ ox: 48, oz: -42 }, 'x', 4, 8, (c, r) => (c >= 1 && c <= 2 && r <= 3) ? 1 : 0, 0xa8a296, 50);
-    CAS({ ox: 48, oz: -46 }, 'z', 4, 8, null, 0xa8a296, 50);
-    CAS({ ox: 52, oz: -46 }, 'z', 4, 8, null, 0xa8a296, 50);
-    const millCone = new THREE.Mesh(new THREE.ConeGeometry(3.1, 2.4, 8), new THREE.MeshBasicMaterial({ map: T.plywood(), color: 0x6a4c30 }));
-    millCone.position.set(50, 6.9, -44);
-    grp.add(millCone);
-    buildPost(50, -44, 6.0, 0.4, 0);
-    const millSpin = new THREE.Group();
-    for (let b = 0; b < 4; b++) {
-      const blade = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 3.4), new THREE.MeshBasicMaterial({ map: T.plywood(), color: 0xc9b28a, side: THREE.DoubleSide }));
-      blade.position.y = 1.9;
+    // ================= ALCHEMY WING (east) + ASTRONOMY TOWER =================
+    const ALC_T = 0xbcb4a4;
+    CAS({ ox: 14, oy: 2.9, oz: -38 }, 'x', 18, 9, (c, r) => (r === 4 || r === 5) && c % 4 === 2 ? 3 : 0, ALC_T);
+    CAS({ ox: 14, oy: 2.9, oz: -12 }, 'x', 26, 9, (c, r) => {
+      if (c >= 5 && c <= 7 && r <= 3) return 1;                      // door to the walkway
+      if (c >= 16 && c <= 17 && r <= 2) return 1;                    // the portrait hole
+      return (r === 4 || r === 5) && c % 5 === 1 ? 3 : 0;
+    }, ALC_T);
+    CAS({ ox: 40, oy: 2.9, oz: -32 }, 'z', 20, 9, (c, r) => ((r === 4 || r === 5) && c % 4 === 2 ? 3 : 0), ALC_T);
+    // a portrait guards the hidden door. it will complain.
+    addProp('portrait', 31, 2.9, -11.7, 2.3, 2.3, 0.2, T.painting, 0xffffff, 20, {});
+    // brewing floor
+    addProp('desk', 24, 2.9, -26, 3.2, 1.05, 1.0, T.floorWood, 0x8a5a32, 50, {});
+    addProp('desk', 24, 2.9, -19, 3.2, 1.05, 1.0, T.floorWood, 0x8a5a32, 50, {});
+    addProp('cauldron', 20, 2.9, -31, 1.1, 1.0, 1.1, T.gunmetal, 0x3a4438, 35, { metal: true });
+    addProp('cauldron', 29, 2.9, -23, 1.0, 0.9, 1.0, T.gunmetal, 0x44383e, 35, { metal: true });
+    flame(20, 3.3, -31, 0.5); flame(29, 3.3, -23, 0.45);
+    addProp('shelf', 16.6, 2.9, -34, 0.5, 1.9, 1.4, T.shelf, 0xffffff, 35, {});
+    addProp('potion', 16.7, 4.8, -34, 0.3, 0.34, 0.3, T.plain, 0x59c48a, 6, { noWalk: true, glassy: true });
+    addProp('potion', 24, 3.95, -26.4, 0.3, 0.36, 0.3, T.plain, 0xc45977, 6, { noWalk: true, glassy: true });
+    addProp('potion', 24, 3.95, -18.6, 0.3, 0.36, 0.3, T.plain, 0x77c459, 6, { noWalk: true, glassy: true });
+    addProp('sign', 15.2, 2.9, -22, 0.18, 2.0, 2.8, T.plain, 0x2e3f34, 20, { noWalk: true }); // the blackboard
+    addProp('portrait', 27, 6.2, -37.7, 2.0, 2.4, 0.14, T.painting, 0xffffff, 20, { noWalk: true });
+    addProp('chandelier', 26, 7.4, -22, 1.8, 0.55, 1.8, T.plain, 0x3a3126, 40, { noWalk: true });
+    flame(26, 8.2, -22, 0.5);
+    candle(24, 3.95, -25.4); candle(24, 3.95, -19.6);
+    torch(14.4, 5.2, -30); torch(14.4, 5.2, -16); torch(39.6, 5.2, -22);
+    // mezzanine along the east wall + stairs
+    sdeck(38.6, -24.7, 2.8, 14.6, 6.5);
+    buildStairs(38.6, -12.7, 0, -1, 2.6, 10, 0.36, 0.5, 2.9);
+    rail({ ox: 37.35, oy: 6.5, oz: -32 }, 'z', 15);
+    // wing roof (9.38) + mezzanine ladder hatch by the east wall
+    sdeck(23, -25, 18, 26, 9.38, 0.3);                               // x 14..32
+    sdeck(35.35, -22, 6.7, 20, 9.38, 0.3);                           // x 32..38.7
+    sdeck(39.28, -26.5, 1.15, 11, 9.38, 0.3);                        // strip north of hatch
+    sdeck(39.28, -15.7, 1.15, 7.4, 9.38, 0.3);                       // south of hatch
+    addLadder(39.4, -20.2, 6.5, 9.38, 'w');
+    lpar({ ox: 14, oz: -38 }, 'x', 18);
+    lpar({ ox: 14, oz: -12 }, 'x', 26);
+    lpar({ ox: 40, oz: -32 }, 'z', 20);
+    addProp('gargoyle', 39.4, 9.38, -12.6, 0.7, 0.95, 0.7, T.cinder, 0x9a948a, 35, { noWalk: true });
+    // the astronomy tower (crown of the map, 17.5 deck)
+    const TOW_T = 0xb2ab9e;
+    CAS({ ox: 32, oy: 2.9, oz: -40 }, 'x', 8, 22, (c, r) => ((r >= 20 && r <= 21 && c >= 2 && c <= 5) || (r === 21 && c % 2 === 0)) ? 1 : ((r === 9 || r === 10) && (c === 2 || c === 5) ? 3 : 0), TOW_T, 58);
+    CAS({ ox: 32, oy: 2.9, oz: -32 }, 'x', 8, 22, (c, r) => {
+      if (c >= 3 && c <= 4 && r <= 4) return 1;                      // ground door (from the wing)
+      if (c >= 3 && c <= 4 && r >= 5 && r <= 8) return 1;            // mezzanine door
+      return ((r >= 20 && r <= 21 && c >= 2 && c <= 5) || (r === 21 && c % 2 === 0)) ? 1 : 0;
+    }, TOW_T, 58);
+    CAS({ ox: 32, oy: 2.9, oz: -40 }, 'z', 8, 22, (c, r) => ((r >= 20 && r <= 21 && c >= 2 && c <= 5) || (r === 21 && c % 2 === 0)) ? 1 : 0, TOW_T, 58);
+    CAS({ ox: 40, oy: 2.9, oz: -40 }, 'z', 8, 22, (c, r) => ((r >= 20 && r <= 21 && c >= 2 && c <= 5) || (r === 21 && c % 2 === 0)) ? 1 : ((r === 13 || r === 14) && (c === 3 || c === 4) ? 3 : 0), TOW_T, 58);
+    addLadder(32.9, -36, 2.9, 8.1, 'e');
+    addLadder(32.9, -36, 8.1, 13.2, 'e');
+    addLadder(32.9, -36, 13.2, 17.5, 'e');
+    sdeck(36.57, -36, 6.14, 7.28, 8.1, 0.22);
+    sdeck(36.57, -36, 6.14, 7.28, 13.2, 0.22);
+    sdeck(36.57, -36, 6.14, 7.28, 17.5, 0.22);
+    addProp('orrery', 36.5, 17.5, -36, 1.2, 1.1, 1.2, T.plain, 0xb89a55, 80, { metal: true });
+    addProp('telescope', 38.8, 17.5, -33.8, 0.45, 1.6, 0.45, T.plain, 0xa08a50, 40, { metal: true });
+    // the orrery's brass planets, circling until someone shoots them down
+    const orr = new THREE.Group();
+    const orrArms = [];
+    for (const [len, rad, col, sp] of [[1.35, 0.2, 0xc9662a, 0.7], [1.05, 0.26, 0x4a7ac9, -1.1], [0.7, 0.15, 0xc9b84a, 1.7]]) {
       const arm = new THREE.Group();
-      arm.add(blade);
-      arm.rotation.z = (b / 4) * Math.PI * 2;
-      millSpin.add(arm);
+      const rod = new THREE.Mesh(U.shadedBoxGeo(len, 0.05, 0.05), new THREE.MeshBasicMaterial({ color: 0x9a8a5a }));
+      rod.position.x = len / 2;
+      arm.add(rod);
+      const pl = new THREE.Mesh(new THREE.SphereGeometry(rad, 8, 6), new THREE.MeshBasicMaterial({ color: col }));
+      pl.position.x = len;
+      arm.add(pl);
+      arm.rotation.y = len * 2.1;
+      orr.add(arm);
+      orrArms.push({ arm, sp });
     }
-    millSpin.position.set(50, 4.9, -41.55);
-    grp.add(millSpin);
-    addProp('keg', 49, 0, -44.8, 0.7, 0.9, 0.7, T.plain, 0x7a4f28, 20, {});
-    addProp('hay', 44, 0, -40, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    addProp('hay', 40, 0, -44, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    addProp('wagon', 34, 0, -44, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
-    // west orchard
-    buildTree(-54, 18); buildTree(-50, 26); buildTree(-58, 30); buildTree(-48, 12); buildTree(-56, 0); buildTree(-60, 22);
-    addProp('wagon', -50, 0, 34, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
-    addProp('hay', -46, 0, 22, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    // east training yard
-    addProp('dummy', 50, 0, 6, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
-    addProp('dummy', 53, 0, 9, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
-    addProp('dummy', 49, 0, 12, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
-    addProp('rack', 55, 0, 5, 0.5, 1.8, 1.6, T.shelf, 0xffffff, 45, {});
-    addProp('hay', 56, 0, 12, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    buildFenceRun(46, 2, 46, 16, false, 'fence', 0x8a6b42, 14);
-    // north field
-    addProp('hay', -12, 0, -46, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    addProp('hay', 14, 0, -48, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
-    addProp('wagon', -22, 0, -46, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
-    // terrace parapet along the podium's north edge (gaps where the stairs arrive)
-    CAS({ ox: -44, oy: 2.9, oz: -40 }, 'x', 27, 1, (c) => (c % 2 || (c >= 1 && c <= 4)) ? 1 : 0, 0xa39d91, 22);
-    CAS({ ox: 17, oy: 2.9, oz: -40 }, 'x', 27, 1, (c) => (c % 2 || (c >= 22 && c <= 25)) ? 1 : 0, 0xa39d91, 22);
+    orr.position.set(36.5, 18.9, -36);
+    grp.add(orr);
+    W._orrerySpin = orr;
+    candle(34.5, 17.5, -38.5);
+    torch(38.5, 5.2, -32.4);
+
+    // ================= CLOISTER ARMS + THE COVERED BRIDGE =================
+    const ARM_T = 0xaaa294;
+    const arcade = (c, r) => (r <= 3 && c % 5 >= 1 && c % 5 <= 3) ? 1 : ((r === 5 || r === 6) && c % 5 === 2 ? 3 : 0);
+    // west arm
+    CAS({ ox: -26, oz: -10 }, 'z', 36, 8, (c, r) => ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), ARM_T);
+    CAS({ ox: -18, oz: -10 }, 'z', 36, 8, arcade, ARM_T);
+    CAS({ ox: -26, oz: 26 }, 'x', 8, 8, (c, r) => (c >= 3 && c <= 4 && r <= 3) ? 1 : 0, ARM_T);
+    buildStairs(-22, -4.4, 0, -1, 3.4, 8, 0.37, 0.5, 0);             // up to the walkway
+    sdeck(-22, -9.4, 3.6, 2, 2.9, 0.3);
+    sdeck(-22, 8, 8.4, 36.4, 5.76, 0.3);                             // arm roof
+    addLadder(-17.55, 16, 0, 5.76, 'e');
+    const apar = (o, dir, cols, gapFn) => CAS({ ...o, oy: 5.76 }, dir, cols, 1, gapFn || ((c) => c % 2 ? 1 : 0), 0x9d968a, 20);
+    apar({ ox: -26, oz: -10 }, 'z', 36);
+    apar({ ox: -18, oz: -10 }, 'z', 36, (c) => (c % 2 || (c >= 16 && c <= 19) || (c >= 25 && c <= 27)) ? 1 : 0); // bridge + ladder gaps
+    addProp('statue', -22, 0, 2, 1.1, 2.4, 1.1, T.cinder, 0xb5afa3, 90, { noWalk: true });
+    addProp('bench', -24.4, 0, 12, 0.6, 0.55, 1.7, T.plain, 0x6a4a28, 25, {});
+    addProp('crate', -20, 0, 22, 0.9, 0.9, 0.9, T.plain, 0xb98a55, 18, {});
+    torch(-25.6, 2.6, 0); torch(-25.6, 2.6, 16);
+    // east arm
+    CAS({ ox: 26, oz: -10 }, 'z', 36, 8, (c, r) => ((r === 3 || r === 4) && c % 4 === 2 ? 3 : 0), ARM_T);
+    CAS({ ox: 18, oz: -10 }, 'z', 36, 8, arcade, ARM_T);
+    CAS({ ox: 18, oz: 26 }, 'x', 8, 8, (c, r) => (c >= 3 && c <= 4 && r <= 3) ? 1 : 0, ARM_T);
+    buildStairs(22, -4.4, 0, -1, 3.4, 8, 0.37, 0.5, 0);
+    sdeck(22, -9.4, 3.6, 2, 2.9, 0.3);
+    sdeck(22, 8, 8.4, 36.4, 5.76, 0.3);
+    addLadder(17.55, 16, 0, 5.76, 'w');
+    apar({ ox: 26, oz: -10 }, 'z', 36);
+    apar({ ox: 18, oz: -10 }, 'z', 36, (c) => (c % 2 || (c >= 16 && c <= 19) || (c >= 25 && c <= 27)) ? 1 : 0);
+    addProp('statue', 22, 0, 14, 1.1, 2.4, 1.1, T.cinder, 0xb5afa3, 90, { noWalk: true });
+    addProp('bench', 24.4, 0, 4, 0.6, 0.55, 1.7, T.plain, 0x6a4a28, 25, {});
+    addProp('broom', 25.3, 0, 24, 0.3, 1.7, 0.3, T.plain, 0x8a5a30, 12, { noWalk: true });
+    torch(25.6, 2.6, 8); torch(25.6, 2.6, 22);
+    // the covered bridge (5.76): wooden walls, thatch roof, stone piers
+    sdeck(0, 8, 36, 3.2, 5.76, 0.25);
+    for (const px of [-9, 0, 9]) sblock(px - 0.7, 0, 7.2, px + 0.7, 5.51, 8.8, true);
+    for (const bz of [6.4, 9.6]) {
+      const bw = WallGrid({ ox: -18, oy: 5.76, oz: bz, dir: 'x', cols: 36, rows: 3, cw: 1, ch: 0.72, th: 0.15, kind: 'wood', tint: 0x6a4c30, hp: 24, house: null });
+      wallFill(bw, (c, r) => (r >= 1 && (c % 4 === 1 || c % 4 === 2)) ? 1 : 0);
+    }
+    const broof = Sheet('thatch', 0xb89858);
+    const bAng = Math.atan2(0.98, 1.95);
+    for (let sgn = -1; sgn <= 1; sgn += 2)
+      for (let c = 0; c < 38; c++)
+        for (let j = 0; j < 2; j++) {
+          const t = (j + 0.5) / 2;
+          sheetAdd(broof, -18.5 + c, 8.9 - t * 0.98 - 0.05, 8 + sgn * t * 1.95, sgn * bAng, 'x', 1.03, 0.13, 1.16, 26);
+        }
+
+    // ================= THE COURTYARD =================
+    // fountain (indestructible; the splashing never stops)
+    const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.75, 2.95, 0.9, 12), new THREE.MeshBasicMaterial({ map: T.cinder(), color: 0xc5bfb0 }));
+    basin.position.set(0, 0.45, 1.5);
+    grp.add(basin);
+    addCollider(-2.6, 0, -1.1, 2.6, 0.9, 4.1, {});
+    slabs.push({ minx: -2.6, minz: -1.1, maxx: 2.6, maxz: 4.1, top: 0.9 });
+    plane(4.6, 4.6, T.water(), 0, 0.78, 1.5).material.map.repeat.set(1, 1);
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.42, 2.3, 8), new THREE.MeshBasicMaterial({ map: T.cinder(), color: 0xb5afa0 }));
+    spire.position.set(0, 1.9, 1.5);
+    grp.add(spire);
+    addCollider(-0.4, 0.9, 1.1, 0.4, 3.05, 1.9, { tree: true });
+    // the old oak (took root before the founders were born)
+    buildPost(0, 18, 4.8, 1.3, 0);
+    buildPost(-1.1, 17.4, 3.4, 0.7, 0);
+    buildPost(1.2, 18.7, 3.8, 0.7, 0);
+    for (const [ox2, oy2, oz2, s2] of [[0, 5.6, 18, 7.5], [-2.4, 4.8, 16.6, 4.5], [2.6, 5.2, 19.2, 4.2], [0.4, 7.4, 18.4, 4.8]]) {
+      const g = U.shadedBoxGeo(s2, s2 * 0.62, s2);
+      g.translate(ox2, oy2, oz2);
+      treeCanopyGeos.push(g);
+    }
+    addProp('bench', -3.4, 0, 15.4, 1.7, 0.55, 0.6, T.plain, 0x6a4a28, 25, {});
+    addProp('bench', 3.4, 0, 20.6, 1.7, 0.55, 0.6, T.plain, 0x6a4a28, 25, {});
+    // market stalls + braziers
+    addProp('stall', -11, 0, -4, 2.6, 1.9, 1.6, T.plywood, 0x8f3a2e, 40, {});
+    addProp('stall', 11, 0, 16, 2.6, 1.9, 1.6, T.plywood, 0x2e5a8f, 40, {});
+    addProp('brazier', -6, 0, 10, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
+    addProp('brazier', 6, 0, 10, 0.8, 1.1, 0.8, T.gunmetal, 0x4a4640, 30, { metal: true });
+    flame(-6, 1.5, 10, 0.6); flame(6, 1.5, 10, 0.6);
+    addProp('broom', -13.2, 0, 2, 0.3, 1.7, 0.3, T.plain, 0x8a5a30, 12, { noWalk: true });
+
+    // ================= THE OWLERY (southwest tower) =================
+    const OWL_T = 0xa8a094;
+    CAS({ ox: -26, oz: 26 }, 'z', 8, 12, (c, r) => (r >= 8 && r <= 10 && c % 3 === 1) ? 1 : 0, OWL_T);
+    CAS({ ox: -18, oz: 26 }, 'z', 8, 12, (c, r) => (r >= 8 && r <= 10 && c % 3 === 1) ? 1 : 0, OWL_T);
+    CAS({ ox: -26, oz: 34 }, 'x', 8, 12, (c, r) => (r >= 8 && r <= 10 && c % 3 === 1) ? 1 : 0, OWL_T);
+    CAS({ ox: -26, oy: 5.76, oz: 26 }, 'x', 8, 4, null, OWL_T);      // above the arm door
+    plane(7.4, 7.4, T.gravel(), -22, 0.04, 30).material.map.repeat.set(2, 2);
+    buildPost(-24, 28.4, 3.4, 0.22, 0);
+    buildPost(-20.2, 29.2, 4.6, 0.22, 0);
+    buildPost(-21.6, 32.4, 2.6, 0.22, 0);
+    addProp('owl', -24, 3.4, 28.4, 0.38, 0.5, 0.38, T.plain, 0xd8d0c8, 10, { noWalk: true });
+    addProp('owl', -20.2, 4.6, 29.2, 0.38, 0.5, 0.38, T.plain, 0xb8a888, 10, { noWalk: true });
+    addProp('owl', -21.6, 2.6, 32.4, 0.38, 0.5, 0.38, T.plain, 0xe8e2d8, 10, { noWalk: true });
+    addProp('scroll', -23.5, 0, 32.5, 0.6, 0.4, 0.45, T.plain, 0xd8c9a0, 8, {});
+    addLadder(-25.1, 30, 0, 8.64, 'e');
+    sdeck(-21.28, 30, 5.85, 7.3, 8.64, 0.25);
+    sdeck(-24.92, 27.55, 1.44, 2.5, 8.64, 0.25);
+    sdeck(-24.92, 32.45, 1.44, 2.5, 8.64, 0.25);
+    const opar = (o, dir, cols) => CAS({ ...o, oy: 8.64 }, dir, cols, 1, (c) => c % 2 ? 1 : 0, 0x9d968a, 20);
+    opar({ ox: -26, oz: 26 }, 'x', 8);
+    opar({ ox: -26, oz: 34 }, 'x', 8);
+    opar({ ox: -26, oz: 26 }, 'z', 8);
+    opar({ ox: -18, oz: 26 }, 'z', 8);
+
+    // ================= THE GREENHOUSE (glass, gloriously fragile) =================
+    const GH = (o, dir, cols, fn) => {
+      const wl = WallGrid({ ox: o.ox, oy: 0, oz: o.oz, dir, cols, rows: 5, cw: 1, ch: 0.72, th: 0.2, kind: 'castle', tint: 0x9aa89a, hp: 48, house: null });
+      wallFill(wl, fn || ((c, r) => r === 0 ? 0 : 3));
+    };
+    GH({ ox: 30, oz: 14 }, 'x', 14);
+    GH({ ox: 30, oz: 26 }, 'x', 14);
+    GH({ ox: 30, oz: 14 }, 'z', 12, (c, r) => (c >= 4 && c <= 6 && r <= 3) ? 1 : (r === 0 ? 0 : 3));
+    GH({ ox: 44, oz: 14 }, 'z', 12);
+    const ghRoof = Sheet('glass', 0xeafcff);
+    const gAng = Math.atan2(1.3, 6.4);
+    for (let sgn = -1; sgn <= 1; sgn += 2)
+      for (let c = 0; c < 15; c++)
+        for (let j = 0; j < 6; j++) {
+          const t = (j + 0.5) / 6;
+          sheetAdd(ghRoof, 30 + c - 0.5 + 0.5, 4.9 - t * 1.3, 20 + sgn * t * 6.4, sgn * gAng, 'x', 1.03, 0.1, 1.15, 22);
+        }
+    plane(3, 11.6, T.dirt(), 37, 0.04, 20).material.map.repeat.set(1, 3);
+    addProp('planter', 33, 0, 17, 2.8, 0.8, 1.2, T.plywood, 0x6a4c30, 25, {});
+    addProp('planter', 33, 0, 23, 2.8, 0.8, 1.2, T.plywood, 0x6a4c30, 25, {});
+    addProp('planter', 41, 0, 17, 2.8, 0.8, 1.2, T.plywood, 0x6a4c30, 25, {});
+    addProp('planter', 41, 0, 23, 2.8, 0.8, 1.2, T.plywood, 0x6a4c30, 25, {});
+    addProp('pumpkin', 33.5, 0.8, 17, 0.7, 0.55, 0.7, T.plain, 0xe07818, 12, { noWalk: true });
+    addProp('pumpkin', 40.6, 0.8, 23.4, 0.6, 0.5, 0.6, T.plain, 0xd8880f, 12, { noWalk: true });
+    addProp('pumpkin', 37, 0, 25, 1.1, 0.9, 1.1, T.plain, 0xe07818, 18, {});
+    addProp('jar', 31.2, 0, 25, 0.6, 0.9, 0.6, T.plain, 0x8a9a6a, 20, {});
+    addProp('trough', 42.5, 0, 15.2, 1.8, 0.6, 0.8, T.plywood, 0x7a5a38, 20, {});
+    addProp('cauldron', 42.6, 0, 24.6, 0.9, 0.85, 0.9, T.gunmetal, 0x3a4438, 30, { metal: true });
+
+    // ================= GATEHOUSE + CURTAIN RUINS (south) =================
+    const GATE_T = 0xa8a296;
+    for (const gx of [-12, 6]) {
+      CAS({ ox: gx, oz: 36 }, 'x', 6, 10, (c, r) => (c >= 2 && c <= 3 && r <= 3) ? 1 : ((r === 5 || r === 6) && c % 3 === 1 ? 3 : 0), GATE_T);
+      CAS({ ox: gx, oz: 42 }, 'x', 6, 10, null, GATE_T);
+      CAS({ ox: gx, oz: 36 }, 'z', 6, 10, null, GATE_T);
+      CAS({ ox: gx + 6, oz: 36 }, 'z', 6, 10, null, GATE_T);
+    }
+    addLadder(-6.75, 39, 0, 7.2, 'w');
+    sdeck(-9.5, 39, 4.3, 5.2, 7.2, 0.25);
+    sdeck(-6.85, 36.9, 1.0, 1.4, 7.2, 0.25);
+    sdeck(-6.85, 41.1, 1.0, 1.4, 7.2, 0.25);
+    addLadder(6.75, 39, 0, 7.2, 'e');
+    sdeck(9.5, 39, 4.3, 5.2, 7.2, 0.25);
+    sdeck(6.85, 36.9, 1.0, 1.4, 7.2, 0.25);
+    sdeck(6.85, 41.1, 1.0, 1.4, 7.2, 0.25);
+    // arch over the gate + raised portcullis (its spikes hang in the passage)
+    CAS({ ox: -6, oz: 38 }, 'x', 12, 10, (c, r) => r <= 3 ? 1 : 0, GATE_T);
+    CAS({ ox: -6, oz: 40 }, 'x', 12, 10, (c, r) => r <= 3 ? 1 : 0, GATE_T);
+    const port = WallGrid({ ox: -6, oy: 2.3, oz: 39, dir: 'x', cols: 12, rows: 2, cw: 1, ch: 0.72, th: 0.14, kind: 'chainlink', tint: 0xffffff, hp: 90, house: null });
+    wallFill(port, () => 0);
+    sdeck(0, 39, 12.8, 3.2, 7.2, 0.3);                               // wall-walk over the gate
+    rail({ ox: -6.4, oy: 7.2, oz: 37.5 }, 'x', 13);
+    rail({ ox: -6.4, oy: 7.2, oz: 40.4 }, 'x', 13);
+    const gpar = (o, dir, cols) => CAS({ ...o, oy: 7.2 }, dir, cols, 1, (c) => c % 2 ? 1 : 0, 0x9d968a, 20);
+    gpar({ ox: -12, oz: 36 }, 'x', 6); gpar({ ox: -12, oz: 42 }, 'x', 6);
+    gpar({ ox: 6, oz: 36 }, 'x', 6); gpar({ ox: 6, oz: 42 }, 'x', 6);
+    addProp('banner', -12.2, 4.4, 39, 0.14, 2.6, 1.8, () => T.heraldry(), 0xffffff, 15, { noWalk: true });
+    addProp('banner', 12.2, 4.4, 39, 0.14, 2.6, 1.8, () => T.heraldry('#2a4aa8'), 0xffffff, 15, { noWalk: true });
+    torch(-5.6, 3.4, 36.4); torch(5.6, 3.4, 36.4);
+    // crumbling curtain walls east + west of the gate (slip through the gaps)
+    ruin({ ox: -44, oz: 38 }, 'x', 32, [4, 6, 5, 3, 0, 2, 5, 6, 4, 2, 0, 3, 5, 6, 3, 2]);
+    ruin({ ox: 12, oz: 38 }, 'x', 32, [2, 3, 5, 6, 4, 0, 2, 4, 6, 5, 3, 0, 2, 4, 6, 5]);
+    sblock(-30, 0, 40.5, -27.6, 1.0, 43);                            // toppled stones
+    sblock(32, 0, 34.5, 34.4, 0.9, 37);
+
+    // ================= THE GROUNDS =================
+    // quidditch practice hoops (west lawn)
+    const hoopMat = new THREE.MeshBasicMaterial({ color: 0xd4af37 });
+    for (const [hx, hz, hh] of [[-50, -8, 5.6], [-55, 2, 7.4], [-50, 12, 6.4]]) {
+      const post = addProp('hoop', hx, 0, hz, 0.4, hh, 0.4, T.plain, 0xc9a227, 40, {});
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(1.25, 0.16, 6, 14), hoopMat);
+      ring.position.set(hx, hh + 1.25, hz);
+      ring.rotation.y = Math.PI / 2;
+      grp.add(ring);
+      W._hoopRings.set(post, ring);
+    }
+    // pumpkin patch + scarecrow (east lawn)
+    for (const [px2, pz2, ps] of [[46, 4, 1.0], [50, 8, 0.8], [48, 13, 1.2], [53, 2, 0.7], [44, 10, 0.9]])
+      addProp('pumpkin', px2, 0, pz2, ps, ps * 0.8, ps, T.plain, 0xe07818, 15, {});
+    addProp('dummy', 49, 0, 6.5, 0.7, 1.8, 0.7, T.plain, 0xc9a05f, 25, {});
+    addProp('hay', 52, 0, 12, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    // standing stones (north field — old magic, do not tip over. or do)
+    for (let st = 0; st < 6; st++) {
+      const a = (st / 6) * Math.PI * 2;
+      addProp('stone', 48 + Math.cos(a) * 5, 0, -44 + Math.sin(a) * 5, 1.1, 1.7 + (st % 3) * 0.4, 0.8, T.cinder, 0x9a948e, 60, { rotY: a });
+    }
+    // scattered trees + wagons + ruins
+    buildTree(-48, -30); buildTree(-52, -40); buildTree(-56, -14); buildTree(52, -26);
+    buildTree(-46, 32); buildTree(-54, 24); buildTree(48, 32); buildTree(56, 22);
+    buildTree(-34, 32); buildTree(34, 34);
+    addProp('wagon', -46, 0, 12, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
+    addProp('hay', -44, 0, 4, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    addProp('wagon', 24, 0, -44, 3.2, 1.9, 1.8, T.plain, 0x8a5a30, 80, {});
+    addProp('hay', -16, 0, -44, 1.4, 1.0, 1.4, T.thatch, 0xd8b968, 15, {});
+    ruin({ ox: -56, oz: -34 }, 'z', 12, [3, 5, 6, 4, 2, 0, 3, 5, 6, 4, 2, 1]);
+    ruin({ ox: 56, oz: -18 }, 'z', 12, [2, 4, 6, 5, 3, 1, 0, 3, 5, 6, 4, 2]);
 
     // merge the stonework
     if (stoneG.length) grp.add(new THREE.Mesh(U.mergeGeos(stoneG.splice(0)), new THREE.MeshBasicMaterial({ map: T.castlebrick(), vertexColors: true, color: 0xb5afa2 })));
     if (ironG.length) grp.add(new THREE.Mesh(U.mergeGeos(ironG.splice(0)), new THREE.MeshBasicMaterial({ map: T.gunmetal(), vertexColors: true, color: 0x4a4640 })));
-    if (organG.length) grp.add(new THREE.Mesh(U.mergeGeos(organG.splice(0)), new THREE.MeshBasicMaterial({ map: T.plain(), color: 0xc9a84a })));
+    if (goldG.length) grp.add(new THREE.Mesh(U.mergeGeos(goldG.splice(0)), new THREE.MeshBasicMaterial({ map: T.plain(), color: 0xc9a84a })));
 
     // ---- flow ----
     W.spawnPoints = [
-      { x: 0, z: 48 }, { x: 0, z: -48 }, { x: -30, z: 44 }, { x: 30, z: 44 },
-      { x: -52, z: 30 }, { x: 52, z: -30 }, { x: -56, z: -18 }, { x: 56, z: 18 },
-      { x: 0, z: 10 }, { x: -30, z: 10 }, { x: 30, z: 10 }, { x: -30, z: -24 },
-      { x: 30, z: -24 }, { x: 0, z: -20 }, { x: -52, z: 8 }, { x: 50, z: -8 },
+      { x: 0, z: 46 }, { x: 0, z: -46 }, { x: -24, z: 42 }, { x: 24, z: 42 },
+      { x: -48, z: 20 }, { x: 48, z: 18 }, { x: -52, z: -8 }, { x: 52, z: 6 },
+      { x: 0, z: 24 }, { x: -22, z: 10 }, { x: 22, z: 10 }, { x: -34, z: -24 },
+      { x: 34, z: -24 }, { x: 0, z: -43 }, { x: -44, z: -36 }, { x: 46, z: -34 },
     ];
     W.campSpots.push(
-      { x: 41.3, z: -35, yaw: Math.atan2(41.3, -35) },      // the belfry
-      { x: -0.65, z: -24, yaw: Math.PI },                   // hall roof
-      { x: 14.2, z: -24, yaw: Math.PI / 2 },                // east gallery
-      { x: -42.1, z: -28, yaw: -Math.PI / 2 },              // library mezzanine
-      { x: 30, z: -11.6, yaw: 0 },                          // choir loft
-      { x: 1.2, z: 16.5, yaw: 0 },                          // cloister balcony
-      { x: -31, z: 10, yaw: Math.atan2(-31, 10) },          // barracks roof
-      { x: 31, z: 10, yaw: Math.atan2(31, 10) },            // kitchen roof
-      { x: 20, z: -39, yaw: Math.PI },                      // north terrace
-      { x: 32, z: -20, yaw: Math.PI / 2 },                  // the crypt
+      { x: 36.5, z: -36, yaw: Math.atan2(36.5, -36) },      // astronomy tower
+      { x: -0.5, z: -25, yaw: Math.PI },                    // hall roof
+      { x: 12.6, z: -25, yaw: Math.PI / 2 },                // east gallery
+      { x: -38.6, z: -28, yaw: -Math.PI / 2 },              // library mezzanine
+      { x: 0, z: 8, yaw: 0 },                               // the covered bridge
+      { x: 0, z: 39, yaw: Math.PI },                        // gatehouse walk
+      { x: -22, z: 8, yaw: Math.atan2(-22, 8) },            // west arm roof
+      { x: 22, z: 8, yaw: Math.atan2(22, 8) },              // east arm roof
+      { x: -21.5, z: 30, yaw: Math.atan2(-21.5, 30) },      // owlery top
+      { x: 24, z: -24, yaw: Math.PI / 2 },                  // the vault
     );
     W.hillSpots = [
-      { x: 0, z: 6, y: 0, r: 5.5 },        // the fountain
-      { x: 0, z: -24, y: 2.9, r: 5.5 },    // the grand hall
-      { x: -30, z: -24, y: 2.9, r: 5.5 },  // the library
-      { x: 31, z: 4, y: 0, r: 5.5 },       // the feast hall
+      { x: 0, z: 1.5, y: 0, r: 5.5 },      // the fountain
+      { x: 0, z: -25, y: 2.9, r: 5.5 },    // the great hall
+      { x: 37, z: 20, y: 0, r: 5.0 },      // the greenhouse
+      { x: -28, z: -24, y: 0, r: 4.5 },    // the potions corridor
     ];
     W.minimapPaint = function (x, s, ox, oz) {
-      x.fillStyle = '#5a7a3f'; x.fillRect(0, 0, 144 * s, 116 * s);
-      x.fillStyle = '#b3763f';
-      x.fillRect((ox - 3.5) * s, (oz + 22) * s, 7 * s, 32 * s);
-      x.fillRect((ox - 2.5) * s, (oz - 54) * s, 5 * s, 14 * s);
-      x.fillStyle = '#a29b8d'; x.fillRect((ox - 44) * s, (oz - 40) * s, 88 * s, 32 * s);   // the podium
-      x.fillStyle = '#8d867a'; x.fillRect((ox - 16) * s, (oz - 38) * s, 32 * s, 28 * s);   // grand hall
+      x.fillStyle = '#54713e'; x.fillRect(0, 0, 144 * s, 116 * s);
+      x.fillStyle = '#b3a37f'; x.fillRect((ox - 3.5) * s, (oz - 10) * s, 7 * s, 48 * s);      // path
+      x.fillStyle = '#a29b8d'; x.fillRect((ox - 40) * s, (oz - 38) * s, 80 * s, 28 * s);      // the podium
+      x.fillStyle = '#8d867a'; x.fillRect((ox - 14) * s, (oz - 38) * s, 28 * s, 26 * s);      // great hall
       x.fillStyle = '#978f81';
-      x.fillRect((ox - 44) * s, (oz - 6) * s, 26 * s, 32 * s);                             // barracks
-      x.fillRect((ox + 18) * s, (oz - 6) * s, 26 * s, 32 * s);                             // kitchens
-      x.fillStyle = '#7a9a55'; x.fillRect((ox - 16) * s, (oz - 6) * s, 32 * s, 24 * s);    // courtyard
-      x.fillStyle = '#c5bfb0'; x.beginPath(); x.arc(ox * s, (oz + 6) * s, 2.6 * s, 0, Math.PI * 2); x.fill();
-      x.fillStyle = '#4a453e';                                                             // the undercroft
-      x.fillRect((ox - 38) * s, (oz - 25) * s, 76 * s, 3 * s);
-      x.fillRect((ox - 21) * s, (oz - 22) * s, 3 * s, 14 * s);
-      x.fillRect((ox + 18) * s, (oz - 22) * s, 3 * s, 14 * s);
-      x.fillRect((ox - 1.5) * s, (oz - 40) * s, 3 * s, 15 * s);
+      x.fillRect((ox - 26) * s, (oz - 10) * s, 8 * s, 44 * s);                                // west arm + owlery
+      x.fillRect((ox + 18) * s, (oz - 10) * s, 8 * s, 36 * s);                                // east arm
+      x.fillStyle = '#7a9a55'; x.fillRect((ox - 18) * s, (oz - 10) * s, 36 * s, 36 * s);      // courtyard
+      x.fillStyle = '#6a4c30'; x.fillRect((ox - 18) * s, (oz + 6.4) * s, 36 * s, 3.2 * s);    // the bridge
+      x.fillStyle = '#9fd4c2'; x.fillRect((ox + 30) * s, (oz + 14) * s, 14 * s, 12 * s);      // greenhouse
       x.fillStyle = '#8a8478';
-      x.fillRect((ox + 38) * s, (oz - 38) * s, 6 * s, 6 * s);                              // bell tower
+      x.fillRect((ox - 12) * s, (oz + 36) * s, 6 * s, 6 * s);                                 // gatehouse
+      x.fillRect((ox + 6) * s, (oz + 36) * s, 6 * s, 6 * s);
+      x.fillRect((ox + 32) * s, (oz - 40) * s, 8 * s, 8 * s);                                 // astronomy tower
+      x.fillStyle = '#4a453e';                                                                // the dungeon
+      x.fillRect((ox - 40) * s, (oz - 26) * s, 80 * s, 4 * s);
+      x.fillRect((ox - 21) * s, (oz - 22) * s, 4 * s, 12 * s);
+      x.fillRect((ox + 17) * s, (oz - 22) * s, 4 * s, 12 * s);
+      x.fillStyle = '#c5bfb0'; x.beginPath(); x.arc(ox * s, (oz + 1.5) * s, 2.6 * s, 0, Math.PI * 2); x.fill();
     };
     let fountainT = 0;
     W.mapUpdate = function (dt) {
-      millSpin.rotation.z += dt * 1.1;
       const t = W.mapClock * 13;
       for (let i = 0; i < flames.length; i++) {
         const f = flames[i];
@@ -3893,13 +3999,24 @@ G.world = (function () {
         f.scale.x = f.userData.s * k;
         f.scale.y = f.userData.s * 1.5 * (2 - k);
       }
+      for (let i = 0; i < floaters.length; i++) {
+        const fc = floaters[i];
+        const y = fc.y0 + Math.sin(W.mapClock * 0.8 + fc.ph) * 0.28;
+        fc.m.position.y = y;
+        fc.f.position.y = y + 0.44;
+      }
+      if (W._orrerySpin) {
+        W._orrerySpin.rotation.y += dt * 0.5;
+        for (const oa of orrArms) oa.arm.rotation.y += dt * oa.sp * 0.6;
+      }
       fountainT -= dt;
       if (fountainT <= 0 && G.fx) {
         fountainT = 2.6;
-        G.fx.addEmitter({ pos: new THREE.Vector3(0, 2.9, 6), rate: 14, kind: 'water', dur: 0.5 });
+        G.fx.addEmitter({ pos: new THREE.Vector3(0, 2.9, 1.5), rate: 14, kind: 'water', dur: 0.5 });
       }
     };
-    addSky(0xd9a06a, { clouds: 7, cloudTint: 0xf2cf9e, sunTint: 0xff9e4a, sunPos: [-150, 38, 40], sunScale: 46 });
+    // twilight over the academy: a violet sky and one pale moon
+    addSky(0x483e6b, { clouds: 6, cloudTint: 0x8577b3, sunTint: 0xe6ecff, sunPos: [110, 72, -150], sunScale: 24 });
   }
 
   function buildPalm(x, z, lean) {

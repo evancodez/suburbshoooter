@@ -1156,6 +1156,10 @@
       lectern: 'Lecterns', books: 'Rare manuscripts', cookpot: 'Royal stew pots', candle: 'Candles',
       hal: 'HAL 9000', core: 'Memory cores',
       castle: 'Cut stone (block)', book: 'Library shelving',
+      cauldron: 'Brass cauldrons', crystal: 'Scrying crystals', orrery: 'Celestial orrery',
+      mirror: 'Enchanted mirrors', potion: 'Potion bottles', scroll: 'Ancient scrolls',
+      telescope: 'Brass telescopes', portrait: 'Talking portraits', broom: 'Racing brooms',
+      pumpkin: 'Prize pumpkins', owl: 'Post owls', harp: 'Golden harps',
     };
     const PRICES = {
       siding: 140, roof: 90, fence: 35, garage: 75, glass: 260, shed: 95, mailbox: 85, propane: 60,
@@ -1171,6 +1175,8 @@
       pane: 2600, organ: 5200, globe: 1800, lectern: 90, books: 25, cookpot: 60, candle: 15,
       hal: 9000, core: 1300,
       castle: 180, book: 45,
+      cauldron: 380, crystal: 4200, orrery: 7500, mirror: 2800, potion: 60, scroll: 35,
+      telescope: 3200, portrait: 1500, broom: 900, pumpkin: 25, owl: 350, harp: 2600,
     };
     const items = Object.entries(G.world.bill).sort((a, b) => (b[1] * (PRICES[b[0]] || 50)) - (a[1] * (PRICES[a[0]] || 50)));
     let rows = '';
