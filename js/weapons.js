@@ -236,9 +236,13 @@ G.arsenal = (function () {
   // ---------- input ----------
   A.fireDown = function () { fireHeld = true; };
   A.fireUp = function () { fireHeld = false; };
+  // [strong, weak, ms] — kick tracks the gun's actual punch. Heavies lean on the
+  // low-freq motor (chest thump), fast guns on the high-freq one (hand buzz), so
+  // an SMG feels like a rattle and the shotgun feels like a slam even at the same
+  // nominal strength. Durations stay short: crisp per-shot kicks, no mush.
   const FIRE_RUMBLE = {
-    sg: [1.0, 0.55, 100], sr: [1.0, 0.6, 110], rl: [0.9, 0.8, 150], lmg: [0.55, 0.35, 55],
-    rev: [0.75, 0.4, 80], dmr: [0.65, 0.4, 75], smg: [0.28, 0.18, 40], ar: [0.4, 0.25, 45],
+    sg: [1.0, 0.45, 140], sr: [1.0, 0.7, 170], rl: [1.0, 0.9, 240], lmg: [0.6, 0.35, 75],
+    rev: [0.85, 0.4, 110], dmr: [0.7, 0.45, 95], smg: [0.14, 0.32, 45], ar: [0.38, 0.3, 60],
   };
   A.adsDown = function () {
     adsHeld = true;
@@ -362,9 +366,9 @@ G.arsenal = (function () {
     if (A.currentId === 'sg') G.fx.shake(0.22, 0.13); // the boom you feel in your chest
     muzzleFlashT = 0.05;
     G.audio.shot(def.kind, null);
-    if (G.rumble) { // per-weapon controller rumble: heavies thump, smgs buzz
+    if (G.rumble) { // per-weapon controller rumble; rt kicks the fire trigger on pads that support it
       const rr = FIRE_RUMBLE[A.currentId] || FIRE_RUMBLE.ar;
-      G.rumble(rr[0], rr[1], rr[2]);
+      G.rumble(rr[0], rr[1], rr[2], { decay: 2.0, rt: Math.max(rr[0], rr[1]) });
     }
     G.botMgr.onNoise(G.player.pos, 48);
     G.game.markPlayerRadar();
@@ -590,10 +594,11 @@ G.arsenal = (function () {
     meleeCd = 0.6;
     meleeT = 0;
     G.audio.melee();
-    if (G.rumble) G.rumble(0.5, 0.3, 60);
+    if (G.rumble) G.rumble(0.2, 0.15, 40); // light swing; connecting adds the thump below
     camera.getWorldDirection(camFwd);
     rayO.copy(camera.position);
     const hit = G.world.raycast(rayO, camFwd, 2.3, { bots: true, remotes: true, skipTeam: G.player.team });
+    if (hit.kind !== 'none' && G.rumble) G.rumble(0.75, 0.35, 90, { delay: 0.03 });
     if (hit.kind === 'bot') {
       if (G.net && G.net.active && !G.net.isHost) {
         hit.bot.hurtFx(60, camFwd, false);
@@ -653,6 +658,7 @@ G.arsenal = (function () {
         const need = def.mag - st.ammo;
         const take = Math.min(need, st.reserve);
         st.ammo += take; st.reserve -= take;
+        if (G.rumble) G.rumble(0.18, 0.3, 45); // mag-seat click in the hands
         // gun game: the crate is bottomless — you reload, you never run dry
         if (G.game && G.game.mode === 'gun') st.reserve = def.reserve;
       }

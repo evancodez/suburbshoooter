@@ -238,20 +238,66 @@
     padPrevB = [];
     for (let i = 0; i < b.length; i++) padPrevB.push(!!(b[i] && b[i].pressed));
   }
-  // controller haptics: strong motor = thump, weak motor = buzz
-  G.rumble = function (strong, weak, ms) {
+  // ---------- controller haptics ----------
+  // Events push short pulses (sharp attack + exponential decay); every frame the
+  // active pulses are mixed and streamed to the pad. Overlapping events LAYER
+  // instead of the newest playEffect() call cancelling the previous one — that
+  // cancellation is what made the old rumble feel flat during sustained fire.
+  // strong = low-frequency motor (heavy thump), weak = high-frequency (buzz/sting).
+  // On pads with trigger actuators (Xbox impulse triggers) gunfire also kicks the
+  // fire trigger; DualSense over the browser Gamepad API only exposes dual-rumble.
+  const haptics = { pulses: [], lastSent: 0, lastS: 0, lastW: 0, lastLT: 0, lastRT: 0 };
+  // opts: decay (>1 = front-loaded kick, default 1.6) · delay (s, for double-thumps)
+  //       lt / rt (0..1 trigger actuator kick, used where supported)
+  G.rumble = function (strong, weak, ms, opts) {
     if (!settings.gamepad) return;
-    const gp = activePad();
-    const va = gp && gp.vibrationActuator;
-    if (va && va.playEffect) {
-      try {
-        const p = va.playEffect('dual-rumble', {
-          duration: ms, strongMagnitude: Math.min(1, strong), weakMagnitude: Math.min(1, weak),
-        });
-        if (p && p.catch) p.catch(() => {});
-      } catch (err) {}
-    }
+    opts = opts || {};
+    haptics.pulses.push({
+      s: Math.min(1, strong || 0), w: Math.min(1, weak || 0),
+      lt: Math.min(1, opts.lt || 0), rt: Math.min(1, opts.rt || 0),
+      t: 0, dur: Math.max(0.03, (ms || 60) / 1000),
+      decay: opts.decay !== undefined ? opts.decay : 1.6,
+      delay: opts.delay || 0,
+    });
   };
+  function updateHaptics(dt) {
+    const gp = settings.gamepad ? activePad() : null;
+    const va = gp && gp.vibrationActuator;
+    if (!va || !va.playEffect) { haptics.pulses.length = 0; return; }
+    let s = 0, w = 0, lt = 0, rt = 0;
+    for (let i = haptics.pulses.length - 1; i >= 0; i--) {
+      const p = haptics.pulses[i];
+      if (p.delay > 0) { p.delay -= dt; continue; }
+      p.t += dt;
+      const k = 1 - p.t / p.dur;
+      if (k <= 0) { haptics.pulses.splice(i, 1); continue; }
+      const env = Math.pow(k, p.decay);
+      // sum, then clamp: simultaneous events feel bigger than one alone
+      s += p.s * env; w += p.w * env; lt += p.lt * env; rt += p.rt * env;
+    }
+    s = Math.min(1, s); w = Math.min(1, w); lt = Math.min(1, lt); rt = Math.min(1, rt);
+    const active = s > 0.02 || w > 0.02 || lt > 0.02 || rt > 0.02;
+    const wasActive = haptics.lastS > 0.02 || haptics.lastW > 0.02 || haptics.lastLT > 0.02 || haptics.lastRT > 0.02;
+    if (!active && !wasActive) return;
+    const now = performance.now();
+    // stream ~30Hz segments (each playEffect replaces the last), but push a fresh
+    // frame immediately on a big jump so shot onsets stay crisp
+    if (active && wasActive && now - haptics.lastSent < 33
+      && Math.abs(s - haptics.lastS) < 0.12 && Math.abs(w - haptics.lastW) < 0.12) return;
+    haptics.lastSent = now; haptics.lastS = s; haptics.lastW = w; haptics.lastLT = lt; haptics.lastRT = rt;
+    try {
+      if (!active) {
+        if (va.reset) { const p = va.reset(); if (p && p.catch) p.catch(() => {}); }
+        else { const p = va.playEffect('dual-rumble', { duration: 1, strongMagnitude: 0, weakMagnitude: 0 }); if (p && p.catch) p.catch(() => {}); }
+        return;
+      }
+      const triggers = (lt > 0.02 || rt > 0.02) && va.effects && va.effects.includes && va.effects.includes('trigger-rumble');
+      const p = triggers
+        ? va.playEffect('trigger-rumble', { duration: 90, strongMagnitude: s, weakMagnitude: w, leftTrigger: lt, rightTrigger: rt })
+        : va.playEffect('dual-rumble', { duration: 90, strongMagnitude: s, weakMagnitude: w });
+      if (p && p.catch) p.catch(() => {});
+    } catch (err) {}
+  }
   function updatePadUI() {
     const el = document.getElementById('padStatus');
     if (!el) return;
@@ -556,7 +602,13 @@
     player.regenT = 0;
     game.dmgA = Math.min(1, game.dmgA + dmg / 55);
     G.audio.hurt();
-    if (G.rumble) G.rumble(Math.min(1, 0.35 + dmg * 0.018), 0.4, 190);
+    if (G.rumble) {
+      // getting shot: a body blow that scales with the hit — pistol graze taps,
+      // shotgun/rocket hits slam. Big hits land a second delayed thump.
+      const h = Math.min(1, dmg / 45);
+      G.rumble(0.4 + 0.6 * h, 0.2 + 0.4 * h, 130 + 150 * h, { decay: 1.3 });
+      if (dmg >= 30) G.rumble(0.25 + 0.55 * h, 0.15, 100, { delay: 0.11 });
+    }
     // direction indicator
     if (fromPos) {
       const bearing = Math.atan2(fromPos.x - player.pos.x, fromPos.z - player.pos.z);
@@ -576,6 +628,7 @@
     return -1;
   }
   function playerDie(killerName, attacker) {
+    if (G.rumble) G.rumble(0.9, 0.5, 550, { decay: 2.4 }); // long fading death rumble
     player.alive = false;
     player.deaths++;
     player.streak = 0;
@@ -1703,6 +1756,7 @@
     const now = performance.now() / 1000;
     let dt = Math.min(now - last, 0.05);
     last = now;
+    updateHaptics(dt); // runs even paused so the pad winds down instead of buzzing forever
     // in multiplayer the world keeps running while the pause overlay is up
     if (game.paused && !(G.net && G.net.active)) { renderer.render(scene, camera); return; }
     game.time += dt;
